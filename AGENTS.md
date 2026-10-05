@@ -124,4 +124,5 @@ uv run pytest -m integration     # test con Gradle reale
 - Chiedi conferma prima di aggiungere una dipendenza o modificare un contratto in `core/schemas.py`.
 - Se un dettaglio su modulo Gradle, toolchain JVM o configurazione del progetto target è ambiguo, fai domande puntuali invece di assumere.
 - Proponi di spuntare un deliverable solo con ruff, mypy e pytest verdi. Avanza "Sprint corrente" solo dopo la mia conferma esplicita.
+- Lavora sul branch dello sprint corrente (`sprintN`). Non committare né fare push su `main`: ci si arriva solo tramite PR a fine sprint.
 - Non aggiungere a questo file log di avanzamento, note di sessione o TODO: lo storico sta nei commit.
