@@ -7,9 +7,9 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from gradle_healer.core.schemas import (
     BuildResult,
     CompilationError,
+    FailedTestError,
     FailureKind,
     SourceLocation,
-    TestFailureError,
 )
 
 BROKEN_TEST = "core/src/test/kotlin/com/example/sandbox/BrokenTest.kt"
@@ -115,7 +115,7 @@ def test_assertion_failure_scenario() -> None:
 
     assert result.failure_kind is FailureKind.TEST_FAILURE
     error = result.errors[0]
-    assert isinstance(error, TestFailureError)
+    assert isinstance(error, FailedTestError)
     assert (error.expected, error.actual) == ("Grace", "Ada")
     assert error.location is not None
     assert error.location.column is None
@@ -176,19 +176,19 @@ def test_compilation_error_requires_column() -> None:
 
 
 @pytest.mark.parametrize("missing", ["expected", "actual"])
-def test_test_failure_requires_expected_and_actual_together(missing: str) -> None:
+def test_failed_test_requires_expected_and_actual_together(missing: str) -> None:
     data = _test_failure()
     del data[missing]
 
     with pytest.raises(ValidationError, match="expected and actual must be both set or both None"):
-        TestFailureError.model_validate(data)
+        FailedTestError.model_validate(data)
 
 
-def test_test_failure_without_expected_and_actual_is_valid() -> None:
+def test_failed_test_without_expected_and_actual_is_valid() -> None:
     data = _test_failure()
     del data["expected"], data["actual"]
 
-    error = TestFailureError.model_validate(data)
+    error = FailedTestError.model_validate(data)
 
     assert (error.expected, error.actual) == (None, None)
 
@@ -248,13 +248,14 @@ def test_models_are_frozen() -> None:
     result = _success()
 
     with pytest.raises(ValidationError, match="Instance is frozen"):
+        # Intentional: mypy already rejects this assignment; the test proves runtime immutability.
         result.exit_code = 1  # type: ignore[misc]
 
 
 # --- JSON Schema ---
 
 
-@pytest.mark.parametrize("model", [SourceLocation, CompilationError, TestFailureError, BuildResult])
+@pytest.mark.parametrize("model", [SourceLocation, CompilationError, FailedTestError, BuildResult])
 def test_models_have_schema_description(model: type[BaseModel]) -> None:
     assert model.model_json_schema().get("description")
 
@@ -307,7 +308,7 @@ def test_failure_kind_has_schema_description() -> None:
         ),
         pytest.param(
             {"failure_kind": "test_failure", "errors": [_compilation()]},
-            "allows only TestFailureError",
+            "allows only FailedTestError",
             id="5-test-failure-with-compilation",
         ),
         pytest.param(

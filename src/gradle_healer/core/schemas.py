@@ -5,7 +5,7 @@ information passed to nodes.
 """
 
 from enum import StrEnum
-from typing import Annotated, ClassVar, Literal, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -83,14 +83,11 @@ class CompilationError(BaseModel):
         return self
 
 
-# --- TestFailureError ---
-class TestFailureError(BaseModel):
+# --- FailedTestError ---
+class FailedTestError(BaseModel):
     """Unit test that failed with an exception or an assertion mismatch."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-
-    # The "Test" prefix would make pytest try to collect this model as a test class.
-    __test__: ClassVar[bool] = False
 
     kind: Literal["test_failure"] = Field(
         default="test_failure",
@@ -143,7 +140,7 @@ class TestFailureError(BaseModel):
 
 
 # --- BuildError ---
-BuildError = Annotated[CompilationError | TestFailureError, Field(discriminator="kind")]
+BuildError = Annotated[CompilationError | FailedTestError, Field(discriminator="kind")]
 
 
 # --- BuildResult ---
@@ -244,9 +241,9 @@ class BuildResult(BaseModel):
         ):
             raise ValueError("failure_kind 'compile_error' allows only CompilationError errors")
         if self.failure_kind is FailureKind.TEST_FAILURE and not all(
-            isinstance(error, TestFailureError) for error in self.errors
+            isinstance(error, FailedTestError) for error in self.errors
         ):
-            raise ValueError("failure_kind 'test_failure' allows only TestFailureError errors")
+            raise ValueError("failure_kind 'test_failure' allows only FailedTestError errors")
         if self.failure_kind in (FailureKind.TIMEOUT, FailureKind.INFRASTRUCTURE) and self.errors:
             raise ValueError(f"failure_kind {self.failure_kind.value!r} must have no errors")
 
