@@ -5,45 +5,33 @@ information passed to nodes.
 """
 
 from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-# ---------------------------------------------------------------------------
-# Common rules
-# ---------------------------------------------------------------------------
+# --- Common rules ---
 # * Every model is immutable and forbids extra fields.
-# * Every field has a description (it ends up in the JSON Schema read by the LLM).
+# * Every model and field has a description (it ends up in the JSON Schema read by the LLM).
 # * Enums are StrEnum with lowercase values.
 # * Free-text strings have a max_length (token budget).
 
 
-# ---------------------------------------------------------------------------
-# TODO 1 - FailureKind (StrEnum)
-# ---------------------------------------------------------------------------
-# Members (lowercase values):
-#   - compile_error
-#   - test_failure
-#   - timeout
-#   - infrastructure
+# --- FailureKind ---
 # Infrastructure covers: process not started, missing Gradle wrapper,
 # daemon crash, unparseable output.
 class FailureKind(StrEnum):
+    """Category of a failed Gradle build: compile error, test failure, timeout or infrastructure."""
+
     COMPILE_ERROR = "compile_error"
     TEST_FAILURE = "test_failure"
     TIMEOUT = "timeout"
     INFRASTRUCTURE = "infrastructure"
 
 
-# ---------------------------------------------------------------------------
-# TODO 2 - SourceLocation
-# ---------------------------------------------------------------------------
-# Fields:
-#   - file: non-empty path RELATIVE to the Gradle project root.
-#       It must not start with "/" or "file:" (enforce with a field validator).
-#   - line: int >= 1.
-#   - column: optional int >= 1 (absent for stack trace frames).
+# --- SourceLocation ---
 class SourceLocation(BaseModel):
+    """Position in a Kotlin/Java source file, relative to the Gradle project root."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     file: str = Field(
@@ -66,16 +54,10 @@ class SourceLocation(BaseModel):
         return value
 
 
-# ---------------------------------------------------------------------------
-# TODO 3 - CompilationError
-# ---------------------------------------------------------------------------
-# Fields:
-#   - kind: literal "compilation", default "compilation" (discriminator).
-#   - location: SourceLocation.
-#       Invariant: location.column must not be None.
-#   - message: 1-500 chars.
-#   - is_primary: bool.
+# --- CompilationError ---
 class CompilationError(BaseModel):
+    """Kotlin compiler error reported at an exact file, line and column."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal["compilation"] = Field(
@@ -101,20 +83,14 @@ class CompilationError(BaseModel):
         return self
 
 
-# ---------------------------------------------------------------------------
-# TODO 4 - TestFailureError
-# ---------------------------------------------------------------------------
-# Fields:
-#   - kind: literal "test_failure", default "test_failure" (discriminator).
-#   - test_class: fully qualified name, non-empty.
-#   - test_method: non-empty.
-#   - exception_type: fully qualified name, non-empty.
-#   - message: 0-500 chars.
-#   - expected / actual: optional, max 200 chars (assertions only).
-#   - location: optional SourceLocation (first frame in the target package).
-#   - is_primary: bool.
+# --- TestFailureError ---
 class TestFailureError(BaseModel):
+    """Unit test that failed with an exception or an assertion mismatch."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+    # The "Test" prefix would make pytest try to collect this model as a test class.
+    __test__: ClassVar[bool] = False
 
     kind: Literal["test_failure"] = Field(
         default="test_failure",
@@ -142,12 +118,14 @@ class TestFailureError(BaseModel):
     expected: str | None = Field(
         default=None,
         max_length=200,
-        description="Expected value of a failed assertion; absent for other exceptions.",
+        description="Expected value of a failed assertion; set together with actual, "
+        "absent for other exceptions.",
     )
     actual: str | None = Field(
         default=None,
         max_length=200,
-        description="Actual value of a failed assertion; absent for other exceptions.",
+        description="Actual value of a failed assertion; set together with expected, "
+        "absent for other exceptions.",
     )
     location: SourceLocation | None = Field(
         default=None,
@@ -157,39 +135,33 @@ class TestFailureError(BaseModel):
         description="True for the failure to fix first; other failures are False.",
     )
 
+    @model_validator(mode="after")
+    def require_expected_and_actual_together(self) -> Self:
+        if (self.expected is None) != (self.actual is None):
+            raise ValueError("expected and actual must be both set or both None")
+        return self
 
-# ---------------------------------------------------------------------------
-# TODO 5 - BuildError
-# ---------------------------------------------------------------------------
-# Discriminated union of CompilationError and TestFailureError on the `kind`
-# field (use Annotated + Field discriminator).
+
+# --- BuildError ---
 BuildError = Annotated[CompilationError | TestFailureError, Field(discriminator="kind")]
 
 
-# ---------------------------------------------------------------------------
-# TODO 6 - BuildResult fields
-# ---------------------------------------------------------------------------
-# Fields:
-#   - task: requested task path, must start with ":" (e.g. ":core:test").
-#   - exit_code: optional int (None if the process was killed or never started).
-#   - timed_out: bool.
-#   - duration_seconds: float >= 0.
-#   - failed_task: optional str (e.g. ":core:compileTestKotlin").
-#   - failure_kind: optional FailureKind (None only on success).
-#   - errors: list of BuildError, default empty list, max 10 items.
-#   - summary: optional, max 500 chars (detail for timeout/infrastructure).
-#   - stdout / stderr: sanitized (no ANSI codes); NEVER sent to the LLM.
+# --- BuildResult ---
+# stdout / stderr are kept for logging and debugging only; the LLM-facing view
+# without them is defined in Sprint 2.
 class BuildResult(BaseModel):
+    """Outcome of one Gradle task invocation, with the salient errors extracted from its output."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     task: str = Field(
-        min_length=2,
         max_length=300,
-        pattern=r"^:",
-        description="Gradle task path that was requested, e.g. ':core:test'.",
+        pattern=r"^(:[A-Za-z0-9_.-]+)+$",
+        description="Gradle task path that was requested, e.g. ':core:test': one or more "
+        "':'-prefixed segments of letters, digits, '_', '-' or '.', no empty segments, "
+        "no whitespace.",
     )
     exit_code: int | None = Field(
-        default=None,
         description="Gradle process exit code; None if the process was killed or never started.",
     )
     timed_out: bool = Field(
@@ -201,13 +173,13 @@ class BuildResult(BaseModel):
     )
     failed_task: str | None = Field(
         default=None,
-        min_length=2,
         max_length=300,
-        pattern=r"^:",
-        description="Gradle task that failed, e.g. ':core:compileTestKotlin'.",
+        pattern=r"^(:[A-Za-z0-9_.-]+)+$",
+        description="Gradle task that failed, e.g. ':core:compileTestKotlin': one or more "
+        "':'-prefixed segments of letters, digits, '_', '-' or '.', no empty segments, "
+        "no whitespace.",
     )
     failure_kind: FailureKind | None = Field(
-        default=None,
         description="Category of the failure; None only when the build succeeded.",
     )
     errors: list[BuildError] = Field(
@@ -227,28 +199,14 @@ class BuildResult(BaseModel):
         description="Sanitized Gradle stderr (no ANSI codes). Never sent to the LLM.",
     )
 
-    # -----------------------------------------------------------------------
-    # TODO 7 - BuildResult.success
-    # -----------------------------------------------------------------------
-    # Derived read-only property: exit_code == 0 and not timed_out.
-    # Use a plain @property, NOT @computed_field (it would break the JSON
-    # round-trip with extra="forbid").
+    # --- BuildResult.success ---
+    # Plain @property, NOT @computed_field: a computed field would be serialized
+    # and break the JSON round-trip with extra="forbid".
     @property
     def success(self) -> bool:
         return self.exit_code == 0 and not self.timed_out
 
-    # -----------------------------------------------------------------------
-    # TODO 8 - BuildResult invariants
-    # -----------------------------------------------------------------------
-    # Model validator, mode "after", returns Self:
-    #   1. success <=> failure_kind is None.
-    #   2. success => errors empty and failed_task is None.
-    #   3. timed_out => exit_code is None and failure_kind == timeout.
-    #   4. exit_code is None => failure_kind is timeout or infrastructure.
-    #   5. compile_error => all errors are CompilationError;
-    #      test_failure => all errors are TestFailureError;
-    #      timeout / infrastructure => errors empty.
-    #   6. If errors is non-empty, exactly one error has is_primary=True.
+    # --- BuildResult invariants ---
     @model_validator(mode="after")
     def check_invariants(self) -> Self:
         # 1. success <=> failure_kind is None.
@@ -280,7 +238,7 @@ class BuildResult(BaseModel):
                 "build without exit_code must have failure_kind 'timeout' or 'infrastructure'"
             )
 
-        # 5. Error types must match failure_kind.
+        # 5. Error types must match failure_kind; timeout / infrastructure have no errors.
         if self.failure_kind is FailureKind.COMPILE_ERROR and not all(
             isinstance(error, CompilationError) for error in self.errors
         ):
@@ -300,11 +258,7 @@ class BuildResult(BaseModel):
         return self
 
 
-# ---------------------------------------------------------------------------
-# Out of scope for schemas
-# ---------------------------------------------------------------------------
+# --- Out of scope for schemas ---
 # * Capping compilation errors to 5 and normalizing paths is the log_parser's
 #   job; the schema only enforces the upper bound and format.
-# * The LLM-facing view of BuildResult (without stdout/stderr) is defined in
-#   Sprint 2.
 # * Any `match` over BuildError must end with `case _: assert_never(...)`.
