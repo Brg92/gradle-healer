@@ -9,6 +9,11 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+# --- GRADLE_TASK_PATH_PATTERN ---
+# Shared with tools.gradle_runner, which validates task paths before launching Gradle.
+GRADLE_TASK_PATH_PATTERN = r"^(:[A-Za-z0-9_.-]+)+$"
+
+
 # --- Common rules ---
 # * Every model is immutable and forbids extra fields.
 # * Every model and field has a description (it ends up in the JSON Schema read by the LLM).
@@ -153,7 +158,7 @@ class BuildResult(BaseModel):
 
     task: str = Field(
         max_length=300,
-        pattern=r"^(:[A-Za-z0-9_.-]+)+$",
+        pattern=GRADLE_TASK_PATH_PATTERN,
         description="Gradle task path that was requested, e.g. ':core:test': one or more "
         "':'-prefixed segments of letters, digits, '_', '-' or '.', no empty segments, "
         "no whitespace.",
@@ -171,7 +176,7 @@ class BuildResult(BaseModel):
     failed_task: str | None = Field(
         default=None,
         max_length=300,
-        pattern=r"^(:[A-Za-z0-9_.-]+)+$",
+        pattern=GRADLE_TASK_PATH_PATTERN,
         description="Gradle task that failed, e.g. ':core:compileTestKotlin': one or more "
         "':'-prefixed segments of letters, digits, '_', '-' or '.', no empty segments, "
         "no whitespace.",
