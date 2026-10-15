@@ -1,29 +1,21 @@
 import asyncio
 import logging
 import os
-import shutil
-import time
-from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 
 import pytest
 
 from gradle_healer.tools import gradle_runner
 from gradle_healer.tools.gradle_runner import RunOutcome, run_gradle, run_process
+from tests.tools.sandbox import (
+    GRADLE_TIMEOUT_SECONDS,
+    POLL_TIMEOUT_SECONDS,
+    REPO_ROOT,
+    apply_scenario,
+    poll_until,
+)
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_SANDBOX = _REPO_ROOT / "evals" / "fixtures" / "sandbox-jvm"
-_SCENARIOS = _REPO_ROOT / "evals" / "fixtures" / "scenarios"
-_SCENARIO_TARGET = Path("core/src/test/kotlin/com/example/sandbox")
-_LOG_FIXTURES = _REPO_ROOT / "tests" / "fixtures" / "logs"
-
-# Cold sandbox build takes about 3 minutes.
-_GRADLE_TIMEOUT_SECONDS = 600
-
-# SIGKILL is delivered asynchronously and the orphan is reaped by init, so
-# "the process is gone" is checked with a short bounded poll.
-_POLL_TIMEOUT_SECONDS = 5.0
-_POLL_INTERVAL_SECONDS = 0.05
+_LOG_FIXTURES = REPO_ROOT / "tests" / "fixtures" / "logs"
 
 
 def _pid_exists(pid: int) -> bool:
@@ -34,19 +26,11 @@ def _pid_exists(pid: int) -> bool:
     return True
 
 
-# ASYNC110 suggests an Event, but nothing notifies us when init reaps an
-# orphan, so there is no event to wait on.
-async def _poll_until(condition: Callable[[], Awaitable[bool]]) -> None:
-    deadline = time.monotonic() + _POLL_TIMEOUT_SECONDS
-    while not await condition() and time.monotonic() < deadline:  # noqa: ASYNC110
-        await asyncio.sleep(_POLL_INTERVAL_SECONDS)
-
-
 async def _wait_for_exit(pid: int) -> None:
     async def gone() -> bool:
         return not _pid_exists(pid)
 
-    await _poll_until(gone)
+    await poll_until(gone)
 
 
 def _assert_pid_gone(pid: int) -> None:
@@ -57,7 +41,7 @@ def _assert_pid_gone(pid: int) -> None:
 async def _read_pid_from_fifo(fifo: Path) -> int:
     # Opening a FIFO for reading blocks until the script opens it for writing,
     # so this returns only after the grandchild has been forked.
-    async with asyncio.timeout(_POLL_TIMEOUT_SECONDS):
+    async with asyncio.timeout(POLL_TIMEOUT_SECONDS):
         return int(await asyncio.to_thread(fifo.read_text))
 
 
@@ -317,46 +301,11 @@ async def test_run_gradle_builds_the_wrapper_command(tmp_path: Path) -> None:
 
 
 # --- Integration: real Gradle on the sandbox scenarios ---
-@pytest.fixture(scope="session")
-def sandbox_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    template = tmp_path_factory.mktemp("sandbox-template") / "sandbox-jvm"
-    shutil.copytree(
-        _SANDBOX, template, ignore=shutil.ignore_patterns("build", ".gradle", ".kotlin")
-    )
-    return template
-
-
-@pytest.fixture
-async def sandbox_project(sandbox_template: Path, tmp_path: Path) -> AsyncIterator[Path]:
-    project = tmp_path / "sandbox-jvm"
-    shutil.copytree(sandbox_template, project)
-    yield project
-    await _assert_no_process_mentions(project)
-
-
-async def _assert_no_process_mentions(project: Path) -> None:
-    # pgrep exits with 1 when no process command line matches.
-    async def pgrep() -> RunOutcome:
-        return await run_process(["pgrep", "-af", str(project)], cwd=project, timeout_seconds=10)
-
-    async def none_alive() -> bool:
-        return (await pgrep()).exit_code == 1
-
-    await _poll_until(none_alive)
-    outcome = await pgrep()
-    assert outcome.exit_code == 1, f"processes still alive:\n{outcome.stdout}"
-
-
-def _apply_scenario(project: Path, scenario: str) -> None:
-    for source in (_SCENARIOS / scenario).glob("*.kt"):
-        shutil.copy(source, project / _SCENARIO_TARGET / source.name)
-
-
 async def _run_scenario(project: Path, scenario: str) -> RunOutcome:
     outcome = await run_gradle(
         project,
         ":core:test",
-        timeout_seconds=_GRADLE_TIMEOUT_SECONDS,
+        timeout_seconds=GRADLE_TIMEOUT_SECONDS,
         extra_args=["--stacktrace"],
     )
     logging.getLogger(__name__).info(
@@ -384,7 +333,7 @@ async def test_gradle_baseline_passes(sandbox_project: Path) -> None:
 
 @pytest.mark.integration
 async def test_gradle_assertion_failure(sandbox_project: Path) -> None:
-    _apply_scenario(sandbox_project, "assertion_failure")
+    apply_scenario(sandbox_project, "assertion_failure")
 
     outcome = await _run_scenario(sandbox_project, "assertion_failure")
 
@@ -394,7 +343,7 @@ async def test_gradle_assertion_failure(sandbox_project: Path) -> None:
 
 @pytest.mark.integration
 async def test_gradle_compile_error(sandbox_project: Path) -> None:
-    _apply_scenario(sandbox_project, "compile_error")
+    apply_scenario(sandbox_project, "compile_error")
 
     outcome = await _run_scenario(sandbox_project, "compile_error")
 
