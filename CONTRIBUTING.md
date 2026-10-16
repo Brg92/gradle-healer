@@ -92,6 +92,14 @@ license as the project (inbound = outbound).
 
 Do not report vulnerabilities in public issues; see [SECURITY.md](SECURITY.md).
 
+## Cross-platform tests
+
+The unit and integration test suites run unchanged on Linux, macOS, and Windows:
+
+- **Helper processes**: spawn child processes through `tests/tools/fake_process.py` (`[sys.executable, str(FAKE_PROCESS), ...]`), never through a POSIX shell (`sh`, `sleep`, `seq`, `trap`, `pwd`, `mkfifo`).
+- **Orphan checks**: inspect and wait on processes with `psutil` (`tests/tools/sandbox.py`), never `pgrep` or `os.kill(pid, 0)`.
+- **Platform-specific tests**: mark with `@pytest.mark.skipif(sys.platform ..., reason="...")` with an explicit reason, and only when the mechanism under test does not exist on that OS (for example POSIX `SIGKILL` after `SIGTERM` grace period, POSIX execute permission bits, or zombie process groups).
+
 ## Workaround policy
 
 Targeted handling of a specific, expected exception (for example
@@ -109,4 +117,4 @@ Approved so far:
 | Location | Workaround | Reason |
 |---|---|---|
 | `tests/core/test_schemas.py` | `# type: ignore[misc]` | Asserts that a frozen model rejects assignment at runtime. |
-| `tests/tools/sandbox.py` (`poll_until`) | `# noqa: ASYNC110` + bounded polling | Nothing signals when init reaps an orphaned process, so there is no event to wait on. |
+| `tests/tools/test_gradle_runner.py` (`test_cancellation_during_startup_still_kills_tree`) | `monkeypatch.setattr(loop, "subprocess_exec", ...)` | Delays `subprocess_exec` after the child spawns to deterministically land a cancellation in the startup window without sleep-based synchronization. |
