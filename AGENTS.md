@@ -15,7 +15,7 @@ The agent does not infer the outcome of a build: it delegates it to the real com
 - **Target**: multi-module Android/Kotlin projects with Gradle (Kotlin DSL)
 - **Observability**: Langfuse (per-node tracing, token usage, pass@k), from Sprint 4
 - **Quality**: `uv`, Ruff (lint + format), mypy strict, pytest + pytest-asyncio, pre-commit, GitHub Actions
-- **Platform**: Linux/macOS only (process groups via `os.killpg`)
+- **Platform**: Linux only, tested in CI (process groups via `os.killpg`). macOS is not verified yet and Windows is not supported yet (both Sprint 1.5); WSL2 works as Linux.
 
 ## Structure
 
@@ -23,7 +23,10 @@ The agent does not infer the outcome of a build: it delegates it to the real com
 gradle-healer/
 ├── AGENTS.md
 ├── CLAUDE.md                # imports AGENTS.md
-├── README.md
+├── README.md                # user-facing
+├── CONTRIBUTING.md          # development setup, branching and releases
+├── CHANGELOG.md             # Keep a Changelog
+├── LICENSE                  # Apache-2.0
 ├── pyproject.toml
 ├── .pre-commit-config.yaml
 ├── .github/workflows/ci.yml # checks on every push; integration on PRs to main
@@ -133,13 +136,21 @@ uv run pre-commit run --all-files
 
 ## Roadmap
 
-- [ ] **Sprint 1: CLI Tooling & Schemas.**
+- [x] **Sprint 1: CLI Tooling & Schemas.**
   - [x] Repo setup (`uv`, Ruff, mypy).
   - [x] `tools/gradle_runner.py`: timeout, process-group kill, stream sanitization.
   - [x] `tools/log_parser.py` + `tools/build_check.py`: salient-error parser into `BuildResult`.
   - [x] `core/schemas.py`: `TargetClassContext`, `CodePatchPlan`, `BuildResult`, plus `core/validation.py`.
   - [x] CI (GitHub Actions) and pre-commit.
   - [x] README.
+- [ ] **Sprint 1.5: Cross-platform (macOS, Windows).**
+  - Process-control abstraction: POSIX process groups / Windows job objects or `taskkill /T`.
+  - `gradlew` vs `gradlew.bat`.
+  - Windows paths in `log_parser` (drive letters, backslashes, `file:///C:/`).
+  - Portable tests (no `sh` / `pgrep`).
+  - CI matrix: ubuntu / macos / windows.
+  - CI triggers: `push` only on `main` plus `pull_request` (drafts included); skip docs-only changes (`**.md`, `LICENSE`).
+  - Windows log fixtures.
 - [ ] **Sprint 2: LangGraph Core.**
   - `AgentState`.
   - Nodes `analyzer_node` (tree-sitter-kotlin), `planner_node`, `coder_node`, `verifier_node`.
@@ -154,7 +165,7 @@ uv run pre-commit run --all-files
   - Typer CLI.
   - README with Mermaid diagrams.
 
-**Current sprint: 1**
+**Current sprint: 1.5**
 
 ## Working mode
 
@@ -162,5 +173,6 @@ uv run pre-commit run --all-files
 - Ask for confirmation before adding a dependency or changing a contract in `core/schemas.py`.
 - If a detail about a Gradle module, the JVM toolchain or the target project configuration is ambiguous, ask specific questions instead of assuming.
 - Propose ticking off a deliverable only with ruff, mypy and pytest green. Advance "Current sprint" only after my explicit confirmation.
-- Work on the current sprint's branch (`sprintN`). Do not commit or push to `main`: it is reached only through a PR at the end of the sprint.
+- Work on the current sprint's branch (`sprintN`, e.g. `sprint1.5`); out-of-sprint PRs use short-lived `docs/...` or `fix/...` branches. Open the PR as a draft with the branch's first push and mark it ready for review only when the work is done. Do not commit or push to `main`: it is reached only through PRs, merged with a merge commit until the first public release and squash-merged from then on, deleting the head branch on merge. Branching, versioning and release conventions are in `CONTRIBUTING.md`.
 - Do not add progress logs, session notes or TODOs to this file: history lives in the commits.
+- Never add AI-tool attribution to commits, pull requests or comments (no Co-Authored-By, no session trailers, no "Generated with ..." lines).
