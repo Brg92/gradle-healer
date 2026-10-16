@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from gradle_healer.core.schemas import (
     GRADLE_TASK_PATH_PATTERN,
+    JVM_PACKAGE_PATTERN,
     BuildResult,
     CompilationError,
     FailedTestError,
@@ -30,7 +31,7 @@ _NAME_MAX_CHARS = 300
 _ELLIPSIS = "…"
 
 _TASK_PATH = re.compile(GRADLE_TASK_PATH_PATTERN)
-_PACKAGE_NAME = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$")
+_PACKAGE_NAME = re.compile(JVM_PACKAGE_PATTERN)
 
 # --- Log patterns ---
 # Each example line comes from the recorded fixtures in tests/fixtures/logs/;
