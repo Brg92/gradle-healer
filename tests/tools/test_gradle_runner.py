@@ -1,12 +1,19 @@
 import asyncio
 import logging
 import os
+import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from gradle_healer.tools import gradle_runner
 from gradle_healer.tools.gradle_runner import RunOutcome, run_gradle, run_process
+from gradle_healer.tools.process_control import (
+    ProcessController,
+    SpawnKwargs,
+    default_controller,
+)
 from tests.tools.sandbox import (
     GRADLE_TIMEOUT_SECONDS,
     POLL_TIMEOUT_SECONDS,
@@ -136,15 +143,59 @@ async def test_external_cancellation_kills_grandchild(tmp_path: Path) -> None:
 
 
 class _CleanupStarted(logging.Handler):
-    """Signals the moment run_process enters its process-group cleanup."""
+    """Signals the moment run_process enters its process-tree cleanup."""
 
     def __init__(self) -> None:
         super().__init__(level=logging.DEBUG)
         self.event = asyncio.Event()
 
     def emit(self, record: logging.LogRecord) -> None:
-        if record.getMessage().startswith(gradle_runner._KILLING_PROCESS_GROUP_LOG_PREFIX):
+        if record.getMessage().startswith(gradle_runner._KILLING_PROCESS_TREE_LOG_PREFIX):
             self.event.set()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="uses POSIX mkfifo and sh; made portable in Step 6",
+)
+async def test_cancellation_during_startup_still_kills_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression test: loop.subprocess_exec spawns the OS child before finishing
+    # pipe setup. If run_process is cancelled before subprocess_exec returns,
+    # the shield on _spawn_process must still hand the transport to the finally
+    # block so the grandchild is killed before CancelledError is re-raised.
+    # Approved monkeypatch: delaying loop.subprocess_exec after the real child
+    # has spawned is the only way to deterministically land a cancellation in
+    # the startup window without sleep-based synchronization.
+    assert sys.platform != "win32"
+    fifo = tmp_path / "pid.fifo"
+    os.mkfifo(fifo)
+    loop = asyncio.get_running_loop()
+    orig_subprocess_exec = loop.subprocess_exec
+    release_spawn = asyncio.Event()
+
+    async def delayed_subprocess_exec(*args: Any, **kwargs: Any) -> Any:
+        result = await orig_subprocess_exec(*args, **kwargs)
+        await release_spawn.wait()
+        return result
+
+    monkeypatch.setattr(loop, "subprocess_exec", delayed_subprocess_exec)
+    script = 'sleep 30 & echo $! > "$1"; wait'
+    task = asyncio.create_task(
+        run_process(["sh", "-c", script, "sh", str(fifo)], cwd=tmp_path, timeout_seconds=30)
+    )
+    grandchild = await _read_pid_from_fifo(fifo)
+
+    # task.cancel() is queued on the event loop before release_spawn.set(), so
+    # the CancelledError hits _spawn_process while spawn_task is still pending.
+    task.cancel()
+    loop.call_soon(release_spawn.set)
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await _wait_for_exit(grandchild)
+
+    _assert_pid_gone(grandchild)
 
 
 async def test_second_cancellation_during_cleanup_still_kills_group(
@@ -199,6 +250,61 @@ async def test_non_executable_file_is_a_launch_error(tmp_path: Path) -> None:
     assert str(tmp_path) not in outcome.launch_error
 
 
+async def test_controller_init_error_is_returned_as_launch_error(tmp_path: Path) -> None:
+    def broken_controller() -> ProcessController:
+        raise OSError(24, "Too many open files")
+
+    outcome = await run_process(
+        ["true"],
+        cwd=tmp_path,
+        timeout_seconds=5,
+        controller_factory=broken_controller,
+    )
+
+    assert outcome.exit_code is None
+    assert not outcome.timed_out
+    assert outcome.launch_error == "cannot launch 'true': Too many open files"
+
+
+async def test_controller_attach_error_kills_child_and_returns_launch_error(
+    tmp_path: Path,
+) -> None:
+    real = default_controller()
+    attached_pids: list[int] = []
+
+    class FailingAttachController:
+        def spawn_kwargs(self) -> SpawnKwargs:
+            return real.spawn_kwargs()
+
+        def attach(self, pid: int) -> None:
+            attached_pids.append(pid)
+            real.attach(pid)
+            raise PermissionError(13, "Access is denied")
+
+        def request_stop(self) -> bool:
+            return real.request_stop()
+
+        def kill_tree(self) -> None:
+            real.kill_tree()
+
+        def close(self) -> None:
+            real.close()
+
+    outcome = await run_process(
+        ["sh", "-c", "sleep 30"],
+        cwd=tmp_path,
+        timeout_seconds=5,
+        controller_factory=FailingAttachController,
+    )
+
+    assert outcome.exit_code is None
+    assert not outcome.timed_out
+    assert outcome.launch_error == "cannot launch 'sh': Access is denied"
+    assert len(attached_pids) == 1
+    await _wait_for_exit(attached_pids[0])
+    _assert_pid_gone(attached_pids[0])
+
+
 # --- Output handling ---
 async def test_output_is_tail_truncated(tmp_path: Path) -> None:
     full = "".join(f"{i}\n" for i in range(1, 1001))
@@ -225,7 +331,7 @@ async def test_output_is_sanitized(tmp_path: Path) -> None:
 
     outcome = await run_process(["sh", "-c", script], cwd=tmp_path, timeout_seconds=5)
 
-    assert outcome.stdout == "red\nnext\nbar\n�\n"
+    assert outcome.stdout == "red\nnext\nbar\n\ufffd\n"
 
 
 # --- Input validation ---
@@ -272,6 +378,33 @@ async def test_run_gradle_rejects_non_positive_timeout(tmp_path: Path) -> None:
         await run_gradle(tmp_path, ":core:test", timeout_seconds=0)
 
 
+async def test_run_gradle_rejects_single_string_extra_args(tmp_path: Path) -> None:
+    with pytest.raises(TypeError, match="extra_args"):
+        await run_gradle(tmp_path, ":core:test", timeout_seconds=5, extra_args="--stacktrace")
+
+
+@pytest.mark.parametrize(
+    "unsafe_arg",
+    [
+        "",
+        "--tests com.example.FooTest",
+        "foo&bar",
+        "foo|bar",
+        "foo>out",
+        "foo<in",
+        "foo^bar",
+        "%PATH%",
+        "!VAR!",
+        '"quoted"',
+        "(sub)",
+        "--flag\n",
+    ],
+)
+async def test_run_gradle_rejects_unsafe_extra_args(tmp_path: Path, unsafe_arg: str) -> None:
+    with pytest.raises(ValueError, match="extra_args"):
+        await run_gradle(tmp_path, ":core:test", timeout_seconds=5, extra_args=[unsafe_arg])
+
+
 async def test_run_gradle_without_gradlew_is_a_launch_error(tmp_path: Path) -> None:
     outcome = await run_gradle(tmp_path, ":core:test", timeout_seconds=5)
 
@@ -284,20 +417,21 @@ async def test_run_gradle_builds_the_wrapper_command(tmp_path: Path) -> None:
     gradlew = tmp_path / "gradlew"
     gradlew.write_text('#!/bin/sh\npwd -P\necho "$@"\n')
     gradlew.chmod(0o755)
+    extra = ["--stacktrace", "--tests", "com.example.*Test$Inner", "-Plist=a,b", "@args.txt"]
 
-    outcome = await run_gradle(
-        tmp_path, ":core:test", timeout_seconds=5, extra_args=["--stacktrace"]
-    )
+    outcome = await run_gradle(tmp_path, ":core:test", timeout_seconds=5, extra_args=extra)
 
     assert outcome.command == (
         str(gradlew),
         ":core:test",
         "--console=plain",
         "--no-daemon",
-        "--stacktrace",
+        *extra,
     )
     assert outcome.exit_code == 0
-    assert outcome.stdout == (f"{tmp_path}\n:core:test --console=plain --no-daemon --stacktrace\n")
+    assert outcome.stdout == (
+        f"{tmp_path}\n:core:test --console=plain --no-daemon {' '.join(extra)}\n"
+    )
 
 
 # --- Integration: real Gradle on the sandbox scenarios ---
