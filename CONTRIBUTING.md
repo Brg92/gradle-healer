@@ -82,6 +82,11 @@ gradle-healer/
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/).
 - Never bypass the hooks with `--no-verify`.
 
+## Licensing
+
+Contributions are licensed under the [Apache License 2.0](LICENSE), the same
+license as the project (inbound = outbound).
+
 ## Workaround policy
 
 Targeted handling of a specific, expected exception (for example

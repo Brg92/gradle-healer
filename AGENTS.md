@@ -26,7 +26,7 @@ gradle-healer/
 ├── README.md                # user-facing
 ├── CONTRIBUTING.md          # development setup, branching and releases
 ├── CHANGELOG.md             # Keep a Changelog
-├── LICENSE                  # proprietary
+├── LICENSE                  # Apache-2.0
 ├── pyproject.toml
 ├── .pre-commit-config.yaml
 ├── .github/workflows/ci.yml # checks on every push; integration on PRs to main

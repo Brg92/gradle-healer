@@ -3,6 +3,8 @@ name = "gradle-healer"
 version = "0.1.0"
 description = "Autonomous LangGraph agent that generates and self-heals Kotlin/Android unit tests verified via Gradle"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [
     { name = "Ambrogio D'Alessandro", email = "dalessandro.ambro@gmail.com" }
 ]

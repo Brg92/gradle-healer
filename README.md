@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/Brg92/gradle-healer/actions/workflows/ci.yml/badge.svg)](https://github.com/Brg92/gradle-healer/actions/workflows/ci.yml)
 [![Platform: Linux](https://img.shields.io/badge/platform-Linux-blue)](#supported-platforms)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 An autonomous agent that writes unit tests for legacy Kotlin/Android code and
 repairs them until the real Gradle build passes.
@@ -234,4 +235,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Proprietary - all rights reserved. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).
