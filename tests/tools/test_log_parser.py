@@ -211,6 +211,28 @@ def test_summary_strips_the_project_root() -> None:
     assert result.summary == "Broken file core/build.gradle.kts"
 
 
+@pytest.mark.parametrize(
+    ("project_root", "in_log"),
+    [
+        (r"C:\Users\dev\repo", r"C:\Users\dev\repo\core\build.gradle.kts"),
+        (r"C:\Users\dev\repo", "file:///C:/Users/dev/repo/core/build/reports/index.html"),
+        ("C:/Users/dev/repo", r"C:\Users\dev\repo\core\build.gradle.kts"),
+    ],
+)
+def test_summary_strips_windows_project_root(project_root: str, in_log: str) -> None:
+    stderr = f"* What went wrong:\nBroken file {in_log}\n"
+
+    result = parse_build(
+        _outcome(stderr=stderr),
+        task=":core:test",
+        project_root=project_root,
+        target_package=_PACKAGE,
+    )
+
+    assert project_root not in (result.summary or "")
+    assert "Users" not in (result.summary or "")
+
+
 def test_unknown_failure_without_details_reports_the_exit_code() -> None:
     result = _parse(_outcome(exit_code=137, stdout="Killed\n"))
 
@@ -312,6 +334,66 @@ def test_long_compiler_message_is_truncated() -> None:
     assert isinstance(error := result.errors[0], CompilationError)
     assert len(error.message) == 500
     assert error.message.endswith("…")
+
+
+@pytest.mark.parametrize(
+    ("project_root", "error_prefix"),
+    [
+        (r"C:\Users\runner\work\repo", "e: file:///C:/Users/runner/work/repo/"),
+        (r"C:\Users\runner\work\repo", "e: file:/C:/Users/runner/work/repo/"),
+        (r"C:\Users\runner\work\repo", "e: file://C:/Users/runner/work/repo/"),
+        (r"C:\Users\runner\work\repo", "e: file:C:/Users/runner/work/repo/"),
+        (r"C:\Users\runner\work\repo", r"e: C:\Users\runner\work\repo\\".rstrip("\\") + "\\"),
+        (r"C:\Users\runner\work\repo", "e: C:/Users/runner/work/repo/"),
+        (r"c:\users\runner\work\repo", "e: file:///C:/Users/runner/work/repo/"),
+        (r"C:\Users\Runner\Work\Repo", "e: file:///c:/users/runner/work/repo/"),
+        ("/Users/runner/work/repo", "e: file:///Users/runner/work/repo/"),
+        (
+            "/private/var/folders/xx/T/pytest-0/sandbox",
+            "e: /private/var/folders/xx/T/pytest-0/sandbox/",
+        ),
+    ],
+)
+def test_compiler_error_paths_across_platforms_normalize_to_posix_relative(
+    project_root: str, error_prefix: str
+) -> None:
+    rel_file = _BROKEN_TEST.replace("/", "\\") if "\\" in error_prefix else _BROKEN_TEST
+    stderr = f"{error_prefix}{rel_file}:11:26 Unresolved reference 'UserService'.\n"
+
+    result = parse_build(
+        _outcome(stderr=stderr),
+        task=":core:test",
+        project_root=project_root,
+        target_package=_PACKAGE,
+    )
+
+    assert result.failure_kind is FailureKind.COMPILE_ERROR
+    assert result.summary is None
+    assert result.errors == [
+        CompilationError(
+            location=SourceLocation(file=_BROKEN_TEST, line=11, column=26),
+            message="Unresolved reference 'UserService'.",
+            is_primary=True,
+        )
+    ]
+
+
+def test_windows_compiler_error_outside_root_is_counted() -> None:
+    stderr = (
+        "e: file:///D:/other/Generated.kt:1:1 Outside on D drive.\n"
+        r"e: C:\Users\runner\other\Other.kt:2:2 Outside on C drive." + "\n"
+    )
+
+    result = parse_build(
+        _outcome(stderr=stderr),
+        task=":core:test",
+        project_root=r"C:\Users\runner\work\repo",
+        target_package=_PACKAGE,
+    )
+
+    assert result.failure_kind is FailureKind.COMPILE_ERROR
+    assert result.errors == []
+    assert result.summary == "2 compiler errors outside the project root"
 
 
 # --- Test failures ---
