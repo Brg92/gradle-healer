@@ -58,8 +58,11 @@ gradle-healer/
 ## Branching and releases
 
 - `main` is always green. Changes reach it only through pull requests with
-  passing CI, merged with a merge commit (no squash, no rebase) so that every
-  commit of the branch stays in the history.
+  passing CI, never through rebase merges:
+  - until the first public release, merge with a merge commit, so that every
+    commit of the branch stays in the history;
+  - from the first public release on, squash-merge, so that each pull request
+    is a single commit on `main`.
 - Delete the head branch when the pull request is merged.
 - Each sprint has its own branch, `sprintN` (for example `sprint1.5`). Work
   outside a sprint goes on short-lived `docs/...` or `fix/...` branches.
