@@ -33,6 +33,7 @@ contracts the agent will be built on (Sprint 1).
 - pre-commit hooks for Ruff, mypy and basic file hygiene.
 - README, CONTRIBUTING, CHANGELOG and LICENSE.
 - Apache-2.0 license.
+- Security policy (SECURITY.md).
 
 ### Known limitations
 

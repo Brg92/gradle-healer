@@ -175,3 +175,4 @@ uv run pre-commit run --all-files
 - Propose ticking off a deliverable only with ruff, mypy and pytest green. Advance "Current sprint" only after my explicit confirmation.
 - Work on the current sprint's branch (`sprintN`, e.g. `sprint1.5`); out-of-sprint PRs use short-lived `docs/...` or `fix/...` branches. Open the PR as a draft with the branch's first push and mark it ready for review only when the work is done. Do not commit or push to `main`: it is reached only through PRs, merged with a merge commit until the first public release and squash-merged from then on, deleting the head branch on merge. Branching, versioning and release conventions are in `CONTRIBUTING.md`.
 - Do not add progress logs, session notes or TODOs to this file: history lives in the commits.
+- Never add AI-tool attribution to commits, pull requests or comments (no Co-Authored-By, no session trailers, no "Generated with ..." lines).

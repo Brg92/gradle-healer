@@ -87,6 +87,10 @@ gradle-healer/
 Contributions are licensed under the [Apache License 2.0](LICENSE), the same
 license as the project (inbound = outbound).
 
+## Security
+
+Do not report vulnerabilities in public issues; see [SECURITY.md](SECURITY.md).
+
 ## Workaround policy
 
 Targeted handling of a specific, expected exception (for example
