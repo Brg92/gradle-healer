@@ -125,6 +125,23 @@ async def test_exit_with_grandchild_holding_pipes_is_not_a_timeout(tmp_path: Pat
     _assert_pid_gone(grandchild)
 
 
+async def test_exit_with_zombie_in_process_group_succeeds(tmp_path: Path) -> None:
+    # The subshell forks an immediate child ("true &") that becomes an unreaped
+    # zombie while "sleep 30" holds the pipes open and the direct child exits.
+    # On macOS, killpg on a group with zombies raises EPERM; PosixProcessController
+    # must tolerate it without failing the run.
+    outcome = await run_process(
+        ["sh", "-c", "(true & sleep 30) & echo $!; exit 0"], cwd=tmp_path, timeout_seconds=10
+    )
+    grandchild = int(outcome.stdout.split()[0])
+
+    await _wait_for_exit(grandchild)
+
+    assert outcome.exit_code == 0
+    assert not outcome.timed_out
+    _assert_pid_gone(grandchild)
+
+
 async def test_external_cancellation_kills_grandchild(tmp_path: Path) -> None:
     fifo = tmp_path / "pid.fifo"
     os.mkfifo(fifo)

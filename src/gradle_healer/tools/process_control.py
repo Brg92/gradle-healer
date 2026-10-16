@@ -15,7 +15,6 @@ grandchildren that detached from the direct child).
   prompt interactively; termination proceeds directly via TerminateJobObject.
 """
 
-import contextlib
 import logging
 import sys
 from typing import Protocol, TypedDict
@@ -229,18 +228,36 @@ else:
         def request_stop(self) -> bool:
             if self._pid is None:
                 return False
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(self._pid, signal.SIGTERM)
+            self._signal_group(signal.SIGTERM)
             return True
 
         def kill_tree(self) -> None:
             if self._pid is None:
                 return
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(self._pid, signal.SIGKILL)
+            self._signal_group(signal.SIGKILL)
 
         def close(self) -> None:
             pass
+
+        def _signal_group(self, sig: signal.Signals) -> None:
+            assert self._pid is not None
+            try:
+                os.killpg(self._pid, sig)
+            except ProcessLookupError:
+                return
+            except PermissionError as exc:
+                # On macOS (XNU killpg1), signaling a process group whose only
+                # remaining members are zombies (SZOMB) raises EPERM rather than
+                # ESRCH. On Linux EPERM should never happen for a group we
+                # created, so log it as a warning.
+                if sys.platform == "darwin":
+                    return
+                logger.warning(
+                    "killpg(%d, %s) failed with PermissionError: %s",
+                    self._pid,
+                    sig.name,
+                    exc,
+                )
 
     def default_controller() -> ProcessController:
         """Return a fresh ProcessController for the current platform."""
