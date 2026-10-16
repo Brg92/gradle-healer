@@ -66,6 +66,9 @@ gradle-healer/
 - Delete the head branch when the pull request is merged.
 - Each sprint has its own branch, `sprintN` (for example `sprint1.5`). Work
   outside a sprint goes on short-lived `docs/...` or `fix/...` branches.
+- Open the pull request as a draft with the first push of the branch, so that
+  CI runs on every push, and mark it ready for review only when the work is
+  done.
 - Versions follow [Semantic Versioning](https://semver.org/), staying on 0.x
   while the API is unstable. Each sprint close is tagged `vX.Y.Z` on `main` and
   published as a GitHub Release with notes from [CHANGELOG.md](CHANGELOG.md).

@@ -149,6 +149,7 @@ uv run pre-commit run --all-files
   - Windows paths in `log_parser` (drive letters, backslashes, `file:///C:/`).
   - Portable tests (no `sh` / `pgrep`).
   - CI matrix: ubuntu / macos / windows.
+  - CI triggers: `push` only on `main` plus `pull_request` (drafts included); skip docs-only changes (`**.md`, `LICENSE`).
   - Windows log fixtures.
 - [ ] **Sprint 2: LangGraph Core.**
   - `AgentState`.
@@ -172,5 +173,5 @@ uv run pre-commit run --all-files
 - Ask for confirmation before adding a dependency or changing a contract in `core/schemas.py`.
 - If a detail about a Gradle module, the JVM toolchain or the target project configuration is ambiguous, ask specific questions instead of assuming.
 - Propose ticking off a deliverable only with ruff, mypy and pytest green. Advance "Current sprint" only after my explicit confirmation.
-- Work on the current sprint's branch (`sprintN`, e.g. `sprint1.5`); out-of-sprint PRs use short-lived `docs/...` or `fix/...` branches. Do not commit or push to `main`: it is reached only through PRs, merged with a merge commit until the first public release and squash-merged from then on, deleting the head branch on merge. Branching, versioning and release conventions are in `CONTRIBUTING.md`.
+- Work on the current sprint's branch (`sprintN`, e.g. `sprint1.5`); out-of-sprint PRs use short-lived `docs/...` or `fix/...` branches. Open the PR as a draft with the branch's first push and mark it ready for review only when the work is done. Do not commit or push to `main`: it is reached only through PRs, merged with a merge commit until the first public release and squash-merged from then on, deleting the head branch on merge. Branching, versioning and release conventions are in `CONTRIBUTING.md`.
 - Do not add progress logs, session notes or TODOs to this file: history lives in the commits.
