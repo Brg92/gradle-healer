@@ -240,7 +240,8 @@ else:
             pass
 
         def _signal_group(self, sig: signal.Signals) -> None:
-            assert self._pid is not None
+            if self._pid is None:
+                return
             try:
                 os.killpg(self._pid, sig)
             except ProcessLookupError:
