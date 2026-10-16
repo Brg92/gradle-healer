@@ -394,7 +394,7 @@ async def run_gradle(
             command=command,
             exit_code=None,
             timed_out=False,
-            launch_error="gradlew not found in project directory",
+            launch_error=f"{_WRAPPER_NAME} not found in project directory",
             duration_seconds=0.0,
             stdout="",
             stderr="",
