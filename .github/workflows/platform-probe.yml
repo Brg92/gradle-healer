@@ -1,0 +1,33 @@
+# Temporary diagnostic workflow for Sprint 1.5 Step 2: collects baseline mypy
+# and pytest failures on macOS and Windows before cross-platform changes land.
+# Approved under the workaround policy as a temporary probe; removed before
+# merging sprint1.5 into main.
+name: Platform Probe
+
+on:
+  push:
+    branches: [sprint1.5]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Type check (baseline probe)
+        continue-on-error: true
+        run: uv run mypy src tests
+      - name: Unit tests (baseline probe)
+        continue-on-error: true
+        run: uv run pytest -m "not integration" -v
