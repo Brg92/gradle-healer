@@ -4,8 +4,8 @@
 [![Platform: Linux](https://img.shields.io/badge/platform-Linux-blue)](#supported-platforms)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-An autonomous agent that writes unit tests for legacy Kotlin/Android code and
-repairs them until the real Gradle build passes.
+An autonomous agent being built to write unit tests for legacy Kotlin/Android
+code and repair them until the real Gradle build passes.
 
 ## Table of contents
 

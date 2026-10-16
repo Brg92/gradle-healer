@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README tagline clarifies that the agent is still in development.
+
 ## [0.1.0] - 2026-10-16
 
 First release: the deterministic tooling of the Verifier and the data
