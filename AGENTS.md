@@ -172,5 +172,5 @@ uv run pre-commit run --all-files
 - Ask for confirmation before adding a dependency or changing a contract in `core/schemas.py`.
 - If a detail about a Gradle module, the JVM toolchain or the target project configuration is ambiguous, ask specific questions instead of assuming.
 - Propose ticking off a deliverable only with ruff, mypy and pytest green. Advance "Current sprint" only after my explicit confirmation.
-- Work on the current sprint's branch (`sprintN`, e.g. `sprint1.5`); out-of-sprint PRs use short-lived `docs/...` or `fix/...` branches. Do not commit or push to `main`: it is reached only through squash-merged PRs. Branching, versioning and release conventions are in `CONTRIBUTING.md`.
+- Work on the current sprint's branch (`sprintN`, e.g. `sprint1.5`); out-of-sprint PRs use short-lived `docs/...` or `fix/...` branches. Do not commit or push to `main`: it is reached only through PRs merged with a merge commit (no squash), deleting the head branch on merge. Branching, versioning and release conventions are in `CONTRIBUTING.md`.
 - Do not add progress logs, session notes or TODOs to this file: history lives in the commits.
