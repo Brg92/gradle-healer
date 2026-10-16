@@ -22,13 +22,14 @@ repairs them until the real Gradle build passes.
 
 ## Overview
 
-GradleHealer is a Python agent built on LangGraph. Given a class in a
-multi-module Kotlin/Android Gradle project, it analyzes the class, plans a set
-of test cases and generates unit tests with MockK, kotlinx-coroutines-test and
-Turbine. It then runs the real build: when compilation or a test fails, the
-build output is parsed into a short, structured error and fed back to the
-model, which retries within a bounded budget. When the budget runs out, the
-agent rolls back only the files it touched.
+GradleHealer is being built as a Python agent on LangGraph. Given a class in a
+multi-module Kotlin/Android Gradle project, it will analyze the class, plan a
+set of test cases and generate unit tests with MockK, kotlinx-coroutines-test
+and Turbine. It will then run the real build: when compilation or a test
+fails, the build output will be parsed into a short, structured error and fed
+back to the model, which will retry within a bounded budget. When the budget
+runs out, the agent will roll back only the files it touched. Today only the
+build verification layer exists; see [Project status](#project-status).
 
 It is meant for Android and Kotlin teams that want test coverage on code
 written before tests were a habit, without trusting a model's claim that the
