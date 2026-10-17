@@ -17,6 +17,7 @@ from gradle_healer.tools.process_control import (
     default_controller,
 )
 from tests.tools.fake_process import FAKE_PROCESS, fake_cmd
+from tests.tools.log_recording import assert_no_leak, redact_project_root
 from tests.tools.sandbox import (
     GRADLE_TIMEOUT_SECONDS,
     POLL_TIMEOUT_SECONDS,
@@ -546,7 +547,8 @@ def _record_logs(project: Path, scenario: str, outcome: RunOutcome) -> None:
     os_dir = _LOG_FIXTURES / _fixture_os_dir()
     os_dir.mkdir(parents=True, exist_ok=True)
     for stream, text in (("stdout", outcome.stdout), ("stderr", outcome.stderr)):
-        deterministic = text.replace(str(project), "<PROJECT_ROOT>")
+        deterministic = redact_project_root(text, project, platform=sys.platform)
+        assert_no_leak(deterministic, project, platform=sys.platform)
         (os_dir / f"{scenario}.{stream}.txt").write_text(
             deterministic, encoding="utf-8", newline="\n"
         )
