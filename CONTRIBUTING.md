@@ -8,7 +8,7 @@ same conventions for people.
 - Python 3.12 and [uv](https://docs.astral.sh/uv/).
 - JDK 17, only for the integration tests (they build the bundled sandbox
   project with real Gradle).
-- Linux. macOS and Windows are not supported yet.
+- Linux, macOS or Windows.
 
 ```bash
 uv sync                      # install dependencies from the lockfile
@@ -40,16 +40,18 @@ gradle-healer/
 ├── CONTRIBUTING.md
 ├── pyproject.toml
 ├── .pre-commit-config.yaml
-├── .github/workflows/ci.yml  # 3-OS checks on PRs and main; integration on non-draft PRs and main; ci-ok gate
+├── .github/workflows/
+│   ├── ci.yml                # 3-OS checks on PRs and main; integration on non-draft PRs and main; ci-ok gate
+│   └── record-logs.yml       # on-demand 3-OS Gradle log fixture recorder
 ├── src/gradle_healer/
 │   ├── core/                 # schemas.py, validation.py
-│   ├── tools/                # gradle_runner.py, log_parser.py, build_check.py
+│   ├── tools/                # process_control.py, gradle_runner.py, log_parser.py, build_check.py
 │   ├── graph/                # Sprint 2
 │   └── prompts/              # Sprint 2
 ├── tests/
 │   ├── core/                 # schema and validation tests
-│   ├── tools/                # runner, parser, build_check; sandbox helpers
-│   └── fixtures/logs/        # recorded Gradle stdout/stderr per scenario
+│   ├── tools/                # runner, parser, build_check; sandbox.py, fake_process.py, log_recording.py
+│   └── fixtures/logs/        # recorded Gradle stdout/stderr per OS ({linux,macos,windows}/)
 └── evals/fixtures/
     ├── sandbox-jvm/          # Kotlin/JVM Gradle project, green by default
     └── scenarios/            # test files that break it on purpose

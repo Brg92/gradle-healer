@@ -5,7 +5,7 @@ Autonomous Python agent built on LangGraph. It analyzes legacy Kotlin/Android co
 ## Core principle
 
 **Generation is probabilistic, verification is deterministic.**
-The agent does not infer the outcome of a build: it delegates it to the real compiler and Gradle. Every LLM output remains a hypothesis until `./gradlew` returns exit code 0.
+The agent does not infer the outcome of a build: it delegates it to the real compiler and Gradle. Every LLM output remains a hypothesis until `gradlew` (`gradlew.bat` on Windows) returns exit code 0.
 
 ## Stack
 
@@ -15,7 +15,7 @@ The agent does not infer the outcome of a build: it delegates it to the real com
 - **Target**: multi-module Android/Kotlin projects with Gradle (Kotlin DSL)
 - **Observability**: Langfuse (per-node tracing, token usage, pass@k), from Sprint 4
 - **Quality**: `uv`, Ruff (lint + format), mypy strict, pytest + pytest-asyncio, pre-commit, GitHub Actions
-- **Platform**: Linux only, tested in CI (process groups via `os.killpg`). macOS is not verified yet and Windows is not supported yet (both Sprint 1.5); WSL2 works as Linux.
+- **Platform**: Linux, macOS and Windows, tested in CI (POSIX process groups via `os.killpg` on Linux and macOS; Windows Job Objects via `ctypes` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`).
 
 ## Structure
 
@@ -29,7 +29,9 @@ gradle-healer/
 ├── LICENSE                  # Apache-2.0
 ├── pyproject.toml
 ├── .pre-commit-config.yaml
-├── .github/workflows/ci.yml # 3-OS checks on PRs and main; integration on non-draft PRs and main; ci-ok gate
+├── .github/workflows/
+│   ├── ci.yml               # 3-OS checks on PRs and main; integration on non-draft PRs and main; ci-ok gate
+│   └── record-logs.yml      # on-demand 3-OS Gradle log fixture recorder
 ├── src/gradle_healer/
 │   ├── core/
 │   │   ├── schemas.py       # BuildResult, TargetClassContext, CodePatchPlan
@@ -37,6 +39,7 @@ gradle-healer/
 │   │   ├── state.py         # (Sprint 2) AgentState
 │   │   └── config.py        # (Sprint 2)
 │   ├── tools/
+│   │   ├── process_control.py # ProcessController: POSIX process groups / Windows Job Objects
 │   │   ├── gradle_runner.py # async process runner -> RunOutcome
 │   │   ├── log_parser.py    # RunOutcome -> BuildResult (pure)
 │   │   ├── build_check.py   # runner + parser glue
@@ -46,8 +49,8 @@ gradle-healer/
 │   └── cli.py               # (Sprint 4) Typer entry point
 ├── tests/                   # offline unit tests (fakes/fixtures)
 │   ├── core/
-│   ├── tools/               # sandbox.py: helpers for real-Gradle tests
-│   └── fixtures/logs/       # recorded Gradle stdout/stderr per scenario
+│   ├── tools/               # sandbox.py, fake_process.py, log_recording.py
+│   └── fixtures/logs/       # recorded Gradle stdout/stderr per OS ({linux,macos,windows}/)
 └── evals/
     ├── fixtures/sandbox-jvm/ # Kotlin/JVM Gradle project, green by default
     ├── fixtures/scenarios/   # test files that break the sandbox on purpose
@@ -72,7 +75,7 @@ flowchart TD
 2. **Analyzer**: extracts signatures, constructors, injected dependencies, coroutines/Flows and produces the minimal semantic context as a `TargetClassContext`. The parser is tree-sitter-kotlin (Sprint 2); `TargetClassContext` is parser-agnostic and describes the class, not the tool that extracted it.
 3. **Planner**: produces a `CodePatchPlan` as LLM structured output. Its JSON Schema must stay portable across structured-output APIs: native types only, no `Field` constraints, no defaults (every field required); every rule lives in a validator and is stated in the field description. Before any code generation, `core/validation.py` cross-checks the plan against the `TargetClassContext` and returns `PlanIssue`s the Planner can be retried with.
 4. **PatchGenerator**: generates the Kotlin code and writes whole test files into the module's test source set, resolved from the module configuration rather than hardcoded (`src/test/kotlin` or `src/test/java`). It never overwrites an existing test file (`PlanIssueCode.WOULD_OVERWRITE_EXISTING_TESTS`).
-5. **Verifier**: runs `gradlew <task> --console=plain --no-daemon` plus optional extra args (e.g. `--stacktrace`) in an async subprocess. `gradle_runner` returns a raw `RunOutcome` (exit code, timeout, sanitized stdout/stderr); `log_parser` turns it into a `BuildResult`; `build_check.check_build` glues the two.
+5. **Verifier**: runs `gradlew <task> --console=plain --no-daemon` (`gradlew.bat` on Windows) plus optional extra args (e.g. `--stacktrace`) in an async subprocess. `gradle_runner` returns a raw `RunOutcome` (exit code, timeout, sanitized stdout/stderr); `log_parser` turns it into a `BuildResult`; `build_check.check_build` glues the two.
    - Android module: `:<module>:testDebugUnitTest`
    - Pure JVM module: `:<module>:test`
    - The task must therefore be parameterized, not hardcoded.
@@ -96,7 +99,7 @@ flowchart TD
    It also truncates stack traces to the frames of the target package.
 4. **Robust subprocesses.** Every Gradle invocation has:
    - an explicit timeout;
-   - a process-group kill on stall;
+   - a process-tree kill on stall (POSIX process group / Windows Job Object);
    - stdout and stderr captured separately;
    - stripping of ANSI codes and progress bars.
 5. **Circuit breaker and destructive operations.** Beyond `MAX_RETRIES`, the fallback runs `git checkout` / `git clean` only on the files tracked in the state as modified by the agent. It never operates on paths outside that perimeter.
@@ -119,6 +122,17 @@ flowchart TD
    Never bypass hooks with `--no-verify`. Approved so far:
    - `# type: ignore[misc]` in `tests/core/test_schemas.py` (runtime check that a frozen model rejects assignment);
    - `monkeypatch.setattr(loop, "subprocess_exec", ...)` in `test_cancellation_during_startup_still_kills_tree`, `tests/tools/test_gradle_runner.py` (delays `subprocess_exec` after the child spawns to deterministically land a cancellation in the startup window without sleep-based synchronization).
+
+## Cross-platform rules
+
+- Use `pathlib`; never build paths with string concatenation or hard-coded `/`.
+- Never invoke a shell (`sh -c`, `cmd /c`) from product code; pass argument lists.
+- Store relative paths POSIX-style in contracts (`SourceLocation`, plans).
+- Write files with explicit `encoding="utf-8"` and `newline="\n"` unless the target requires CRLF.
+- New OS-touching code (git, file writes, CLI) goes behind an abstraction like `ProcessController` and is covered by the 3-OS CI matrix.
+- Tests use `tests/tools/fake_process.py` and `psutil`, never shell tools; platform-specific tests use `skipif` with a reason only when the mechanism does not exist on that OS.
+- Synthetic paths for another OS in tests use `PurePosixPath` / `PureWindowsPath`, and host-filesystem calls such as `os.path.realpath` run only on the host's own paths.
+- After every push, check the CI run of that commit.
 
 ## Commands
 
@@ -143,14 +157,14 @@ uv run pre-commit run --all-files
   - [x] `core/schemas.py`: `TargetClassContext`, `CodePatchPlan`, `BuildResult`, plus `core/validation.py`.
   - [x] CI (GitHub Actions) and pre-commit.
   - [x] README.
-- [ ] **Sprint 1.5: Cross-platform (macOS, Windows).**
-  - Process-control abstraction: POSIX process groups / Windows job objects or `taskkill /T`.
-  - `gradlew` vs `gradlew.bat`.
-  - Windows paths in `log_parser` (drive letters, backslashes, `file:///C:/`).
-  - Portable tests (no `sh` / `pgrep`).
-  - CI matrix: ubuntu / macos / windows, gated by `ci-ok`.
-  - CI triggers: `push` on `main` plus `pull_request` (unit checks on all PRs; integration on non-draft PRs and `main`).
-  - Windows log fixtures.
+- [x] **Sprint 1.5: Cross-platform (macOS, Windows).**
+  - [x] `tools/process_control.py`: `ProcessController` abstraction (POSIX process groups via `os.killpg` / Windows Job Objects via `ctypes` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`).
+  - [x] `gradlew` vs `gradlew.bat` resolution and `extra_args` validation in `tools/gradle_runner.py`.
+  - [x] Windows and macOS paths in `tools/log_parser.py` (drive letters, backslashes, `file:///C:/`, case-insensitive root stripping).
+  - [x] Portable tests (`tests/tools/fake_process.py` and `psutil`, no `sh` / `pgrep`).
+  - [x] 3-OS CI matrix (`ubuntu-latest`, `macos-latest`, `windows-latest`), gated by `ci-ok`.
+  - [x] CI triggers: `push` on `main` plus `pull_request` (unit checks on all PRs; integration on non-draft PRs and `main`).
+  - [x] Per-OS Gradle log fixtures (`tests/fixtures/logs/{linux,macos,windows}/`) and `.github/workflows/record-logs.yml`.
 - [ ] **Sprint 2: LangGraph Core.**
   - `AgentState`.
   - Nodes `analyzer_node` (tree-sitter-kotlin), `planner_node`, `coder_node`, `verifier_node`.
@@ -165,7 +179,7 @@ uv run pre-commit run --all-files
   - Typer CLI.
   - README with Mermaid diagrams.
 
-**Current sprint: 1.5**
+**Current sprint: 2**
 
 ## Working mode
 
