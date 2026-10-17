@@ -10,7 +10,12 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "langchain-anthropic>=1.7.6",
+    "langchain-core>=1.6.12",
+    "langgraph>=1.2.16",
     "pydantic>=2",
+    "tree-sitter>=0.26.0",
+    "tree-sitter-kotlin>=1.1.0",
 ]
 
 [build-system]
