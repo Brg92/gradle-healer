@@ -166,9 +166,9 @@ uv run pre-commit run --all-files
   - [x] CI triggers: `push` on `main` plus `pull_request` (unit checks on all PRs; integration on non-draft PRs and `main`).
   - [x] Per-OS Gradle log fixtures (`tests/fixtures/logs/{linux,macos,windows}/`) and `.github/workflows/record-logs.yml`.
 - [ ] **Sprint 2: LangGraph Core.**
-  - `AgentState`.
-  - Nodes `analyzer_node` (tree-sitter-kotlin), `planner_node`, `coder_node`, `verifier_node`.
-  - Linear pipeline: Ingestion → Analyzer → Planner → Coder → Verifier.
+  - [ ] `AgentState`.
+  - [ ] Nodes `analyzer_node` (tree-sitter-kotlin), `planner_node`, `coder_node`, `verifier_node`.
+  - [ ] Linear pipeline: Ingestion → Analyzer → Planner → Coder → Verifier.
 - [ ] **Sprint 3: Reflection & Self-Healing.**
   - `reflector_node` with a prompt specialized in Kotlin/MockK errors.
   - Conditional routing on `failure_kind` with `MAX_RETRIES`.
