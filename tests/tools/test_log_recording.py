@@ -1,5 +1,5 @@
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
@@ -14,7 +14,7 @@ from tests.tools.log_recording import (
 
 
 def test_redact_linux_paths() -> None:
-    project = Path("/tmp/pytest-of-runner/pytest-0/test_compile0/sandbox-jvm")
+    project = PurePosixPath("/tmp/pytest-of-runner/pytest-0/test_compile0/sandbox-jvm")
     raw = (
         f"e: file://{project}/core/src/test/kotlin/BrokenTest.kt:11:26 Unresolved\n"
         f"See report at: file://{project}/core/build/reports/tests/test/index.html\n"
@@ -30,7 +30,7 @@ def test_redact_linux_paths() -> None:
 
 
 def test_redact_macos_var_and_private_var_forms() -> None:
-    project = Path("/var/folders/xx/12345/T/pytest-of-runner/pytest-0/sandbox-jvm")
+    project = PurePosixPath("/var/folders/xx/12345/T/pytest-of-runner/pytest-0/sandbox-jvm")
     private_project = f"/private{project}"
     raw = (
         f"e: file://{private_project}/core/src/test/kotlin/BrokenTest.kt:11:26 Unresolved\n"
@@ -51,7 +51,7 @@ def test_redact_windows_forward_slash_backslash_short_and_mixed_case() -> None:
         r"C:\Users\runneradmin\AppData\Local\Temp\pytest-of-runneradmin\pytest-0\sandbox-jvm"
     )
     short_root = r"C:\Users\RUNNER~1\AppData\Local\Temp\PYTEST~1\pytest-0\sandbox-jvm"
-    project = Path(long_root)
+    project = PureWindowsPath(long_root)
     raw = (
         "e: file:///C:/Users/runneradmin/AppData/Local/Temp/pytest-of-runneradmin/"
         "pytest-0/sandbox-jvm/core/src/test/kotlin/BrokenTest.kt:11:26 Unresolved\n"
@@ -87,7 +87,7 @@ def test_redact_windows_forward_slash_backslash_short_and_mixed_case() -> None:
     ],
 )
 def test_assert_no_leak_rejects_unredacted_paths(leaked_text: str) -> None:
-    project = Path(r"C:\Users\runneradmin\AppData\Local\Temp\sandbox-jvm")
+    project = PureWindowsPath(r"C:\Users\runneradmin\AppData\Local\Temp\sandbox-jvm")
 
     with pytest.raises(AssertionError, match="leaked in recorded log"):
         assert_no_leak(leaked_text, project, platform="win32")

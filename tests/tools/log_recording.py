@@ -5,14 +5,14 @@ import os
 import re
 import sys
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import PurePath
 
 POSIX_PROJECT_ROOT = "<PROJECT_ROOT>"
 WINDOWS_PROJECT_ROOT_BACKSLASH = r"C:\PROJECT_ROOT"
 WINDOWS_PROJECT_ROOT_SLASH = "C:/PROJECT_ROOT"
 
 
-def windows_short_path(path: str | Path) -> str | None:
+def windows_short_path(path: str | PurePath) -> str | None:
     """Return the Windows 8.3 short path for path, or None when unavailable."""
     if sys.platform != "win32":
         return None
@@ -32,16 +32,17 @@ def windows_short_path(path: str | Path) -> str | None:
 
 
 def _candidate_roots(
-    project: Path,
+    project: PurePath,
     *,
     platform: str,
     extra_roots: Sequence[str] = (),
 ) -> list[str]:
     raw = str(project)
     candidates: list[str] = [raw]
-    resolved = os.path.realpath(raw)
-    if resolved != raw:
-        candidates.append(resolved)
+    if platform == sys.platform:
+        resolved = os.path.realpath(raw)
+        if resolved != raw:
+            candidates.append(resolved)
     candidates.extend(extra_roots)
 
     if platform == "win32":
@@ -67,7 +68,7 @@ def _candidate_roots(
 
 def redact_project_root(
     text: str,
-    project: Path,
+    project: PurePath,
     *,
     platform: str,
     extra_roots: Sequence[str] = (),
@@ -111,7 +112,7 @@ def redact_project_root(
 
 def assert_no_leak(
     text: str,
-    project: Path,
+    project: PurePath,
     *,
     platform: str = sys.platform,
     extra_roots: Sequence[str] = (),
