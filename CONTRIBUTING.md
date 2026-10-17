@@ -101,6 +101,16 @@ The unit and integration test suites run unchanged on Linux, macOS, and Windows:
 - **Orphan checks**: inspect and wait on processes with `psutil` (`tests/tools/sandbox.py`), never `pgrep` or `os.kill(pid, 0)`.
 - **Platform-specific tests**: mark with `@pytest.mark.skipif(sys.platform ..., reason="...")` with an explicit reason, and only when the mechanism under test does not exist on that OS (for example POSIX `SIGKILL` after `SIGTERM` grace period, POSIX execute permission bits, or zombie process groups).
 
+### Re-recording Gradle log fixtures
+
+Recorded Gradle logs live under `tests/fixtures/logs/{linux,macos,windows}/`. When the bundled sandbox's Gradle or Kotlin version changes:
+
+1. Trigger `.github/workflows/record-logs.yml` by adding the `record-logs` label to the pull request (or via `gh workflow run record-logs.yml` once on `main`).
+2. Download the artifacts with `gh run download <run-id>`.
+3. Inspect the recorded `.txt` files to verify that project roots were replaced with `<PROJECT_ROOT>` (Linux/macOS) or `C:\PROJECT_ROOT` / `C:/PROJECT_ROOT` (Windows) and no runner paths leaked.
+4. Copy the updated files into `tests/fixtures/logs/{macos,windows}/` (and `linux/` only when intentionally re-baselining Linux fixtures), run `uv run pytest`, and commit locally.
+5. Remove the `record-logs` label from the pull request (`gh pr edit <pr> --remove-label record-logs`).
+
 ## Workaround policy
 
 Targeted handling of a specific, expected exception (for example
