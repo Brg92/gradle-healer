@@ -530,11 +530,26 @@ async def _run_scenario(project: Path, scenario: str) -> RunOutcome:
     return outcome
 
 
+def _fixture_os_dir() -> str:
+    match sys.platform:
+        case "linux":
+            return "linux"
+        case "darwin":
+            return "macos"
+        case "win32":
+            return "windows"
+        case _:
+            raise RuntimeError(f"unsupported platform for log fixtures: {sys.platform!r}")
+
+
 def _record_logs(project: Path, scenario: str, outcome: RunOutcome) -> None:
-    _LOG_FIXTURES.mkdir(parents=True, exist_ok=True)
+    os_dir = _LOG_FIXTURES / _fixture_os_dir()
+    os_dir.mkdir(parents=True, exist_ok=True)
     for stream, text in (("stdout", outcome.stdout), ("stderr", outcome.stderr)):
         deterministic = text.replace(str(project), "<PROJECT_ROOT>")
-        (_LOG_FIXTURES / f"{scenario}.{stream}.txt").write_text(deterministic)
+        (os_dir / f"{scenario}.{stream}.txt").write_text(
+            deterministic, encoding="utf-8", newline="\n"
+        )
 
 
 @pytest.mark.integration

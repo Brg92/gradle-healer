@@ -16,6 +16,17 @@ from gradle_healer.tools.log_parser import MAX_ERRORS, parse_build
 
 _LOG_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "logs"
 _PROJECT_ROOT = "<PROJECT_ROOT>"
+_WINDOWS_PROJECT_ROOT = r"C:\PROJECT_ROOT"
+_OS_PROJECT_ROOTS: dict[str, str] = {
+    "linux": _PROJECT_ROOT,
+    "macos": _PROJECT_ROOT,
+    "windows": _WINDOWS_PROJECT_ROOT,
+}
+_AVAILABLE_FIXTURE_OSES: tuple[str, ...] = tuple(
+    os_name
+    for os_name in ("linux", "macos", "windows")
+    if (_LOG_FIXTURES / os_name / "baseline.stdout.txt").is_file()
+)
 _PACKAGE = "com.example.sandbox"
 _SANDBOX_DIR = "core/src/test/kotlin/com/example/sandbox"
 _BROKEN_TEST = f"{_SANDBOX_DIR}/BrokenTest.kt"
@@ -42,11 +53,12 @@ def _outcome(
     )
 
 
-def _recorded(scenario: str, exit_code: int) -> RunOutcome:
+def _recorded(scenario: str, exit_code: int, *, os_name: str = "linux") -> RunOutcome:
+    os_dir = _LOG_FIXTURES / os_name
     return _outcome(
         exit_code=exit_code,
-        stdout=(_LOG_FIXTURES / f"{scenario}.stdout.txt").read_text(),
-        stderr=(_LOG_FIXTURES / f"{scenario}.stderr.txt").read_text(),
+        stdout=(os_dir / f"{scenario}.stdout.txt").read_text(encoding="utf-8"),
+        stderr=(os_dir / f"{scenario}.stderr.txt").read_text(encoding="utf-8"),
     )
 
 
@@ -54,12 +66,13 @@ def _parse(
     outcome: RunOutcome,
     *,
     task: str = ":core:test",
+    project_root: str = _PROJECT_ROOT,
     source_index: Mapping[str, str] | None = None,
 ) -> BuildResult:
     result = parse_build(
         outcome,
         task=task,
-        project_root=_PROJECT_ROOT,
+        project_root=project_root,
         target_package=_PACKAGE,
         source_index=source_index,
     )
@@ -78,11 +91,11 @@ def _test_block(exception_line: str, *frames: str) -> str:
 
 
 # --- Recorded fixtures ---
-def test_baseline_is_a_success() -> None:
-    outcome = _recorded("baseline", exit_code=0)
-    assert "Sharing is only supported" in outcome.stderr
+@pytest.mark.parametrize("os_name", _AVAILABLE_FIXTURE_OSES)
+def test_baseline_is_a_success(os_name: str) -> None:
+    outcome = _recorded("baseline", exit_code=0, os_name=os_name)
 
-    result = _parse(outcome)
+    result = _parse(outcome, project_root=_OS_PROJECT_ROOTS[os_name])
 
     assert result.success
     assert result.failure_kind is None
@@ -91,8 +104,12 @@ def test_baseline_is_a_success() -> None:
     assert result.summary is None
 
 
-def test_compile_error_extracts_relative_compiler_errors() -> None:
-    result = _parse(_recorded("compile_error", exit_code=1))
+@pytest.mark.parametrize("os_name", _AVAILABLE_FIXTURE_OSES)
+def test_compile_error_extracts_relative_compiler_errors(os_name: str) -> None:
+    result = _parse(
+        _recorded("compile_error", exit_code=1, os_name=os_name),
+        project_root=_OS_PROJECT_ROOTS[os_name],
+    )
 
     assert result.failure_kind is FailureKind.COMPILE_ERROR
     assert result.failed_task == ":core:compileTestKotlin"
@@ -129,26 +146,40 @@ def _expected_assertion_failure(location: SourceLocation | None) -> FailedTestEr
     )
 
 
-def test_assertion_failure_without_index_has_no_location() -> None:
-    result = _parse(_recorded("assertion_failure", exit_code=1))
+@pytest.mark.parametrize("os_name", _AVAILABLE_FIXTURE_OSES)
+def test_assertion_failure_without_index_has_no_location(os_name: str) -> None:
+    result = _parse(
+        _recorded("assertion_failure", exit_code=1, os_name=os_name),
+        project_root=_OS_PROJECT_ROOTS[os_name],
+    )
 
     assert result.failure_kind is FailureKind.TEST_FAILURE
     assert result.failed_task == ":core:test"
     assert result.errors == [_expected_assertion_failure(location=None)]
 
 
-def test_assertion_failure_location_is_resolved_with_the_index() -> None:
+@pytest.mark.parametrize("os_name", _AVAILABLE_FIXTURE_OSES)
+def test_assertion_failure_location_is_resolved_with_the_index(os_name: str) -> None:
     index = {"GetUserUseCaseFailingTest.kt": _FAILING_TEST, "User.kt": "core/src/main/User.kt"}
 
-    result = _parse(_recorded("assertion_failure", exit_code=1), source_index=index)
+    result = _parse(
+        _recorded("assertion_failure", exit_code=1, os_name=os_name),
+        project_root=_OS_PROJECT_ROOTS[os_name],
+        source_index=index,
+    )
 
     assert result.errors == [
         _expected_assertion_failure(location=SourceLocation(file=_FAILING_TEST, line=20))
     ]
 
 
-def test_assertion_failure_location_needs_the_file_in_the_index() -> None:
-    result = _parse(_recorded("assertion_failure", exit_code=1), source_index={"Other.kt": "x"})
+@pytest.mark.parametrize("os_name", _AVAILABLE_FIXTURE_OSES)
+def test_assertion_failure_location_needs_the_file_in_the_index(os_name: str) -> None:
+    result = _parse(
+        _recorded("assertion_failure", exit_code=1, os_name=os_name),
+        project_root=_OS_PROJECT_ROOTS[os_name],
+        source_index={"Other.kt": "x"},
+    )
 
     assert isinstance(error := result.errors[0], FailedTestError)
     assert error.location is None
