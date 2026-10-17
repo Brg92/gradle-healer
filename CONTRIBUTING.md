@@ -40,7 +40,7 @@ gradle-healer/
 ├── CONTRIBUTING.md
 ├── pyproject.toml
 ├── .pre-commit-config.yaml
-├── .github/workflows/ci.yml  # checks on every push; integration tests on PRs to main
+├── .github/workflows/ci.yml  # 3-OS checks on PRs and main; integration on non-draft PRs and main; ci-ok gate
 ├── src/gradle_healer/
 │   ├── core/                 # schemas.py, validation.py
 │   ├── tools/                # gradle_runner.py, log_parser.py, build_check.py
@@ -58,7 +58,7 @@ gradle-healer/
 ## Branching and releases
 
 - `main` is always green. Changes reach it only through pull requests with
-  passing CI, never through rebase merges:
+  passing CI (`ci-ok` required check), never through rebase merges:
   - until every sprint on the roadmap is done and GradleHealer is complete,
     tested and usable, merge with a merge commit, so that every commit of the
     branch stays in the history;
@@ -68,8 +68,9 @@ gradle-healer/
 - Each sprint has its own branch, `sprintN` (for example `sprint1.5`). Work
   outside a sprint goes on short-lived `docs/...` or `fix/...` branches.
 - Open the pull request as a draft with the first push of the branch, so that
-  CI runs on every push, and mark it ready for review only when the work is
-  done.
+  CI runs on pull requests and on `main` (unit checks run on Linux, macOS and
+  Windows; integration tests run on non-draft pull requests and on `main`), and
+  mark it ready for review only when the work is done.
 - Versions follow [Semantic Versioning](https://semver.org/), staying on 0.x
   while the API is unstable. Each sprint close is tagged `vX.Y.Z` on `main` and
   published as a GitHub Release with notes from [CHANGELOG.md](CHANGELOG.md).

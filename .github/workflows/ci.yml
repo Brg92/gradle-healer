@@ -2,16 +2,29 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -25,9 +38,13 @@ jobs:
       - run: uv run pytest -m "not integration" -v
 
   integration:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
     needs: checks
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -50,3 +67,28 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run pytest -m integration -v
+
+  # Single aggregate gate required by branch protection on main: keeps a stable
+  # check name regardless of matrix entries, and avoids GitHub leaving required
+  # matrix checks pending when integration is skipped on draft pull requests.
+  ci-ok:
+    if: always()
+    needs: [checks, integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify upstream job results
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+        run: |
+          echo "checks: ${CHECKS_RESULT}"
+          echo "integration: ${INTEGRATION_RESULT}"
+          if [[ "${CHECKS_RESULT}" != "success" ]]; then
+            echo "checks did not succeed (${CHECKS_RESULT})" >&2
+            exit 1
+          fi
+          if [[ "${INTEGRATION_RESULT}" != "success" && "${INTEGRATION_RESULT}" != "skipped" ]]; then
+            echo "integration failed (${INTEGRATION_RESULT})" >&2
+            exit 1
+          fi

@@ -29,7 +29,7 @@ gradle-healer/
 ├── LICENSE                  # Apache-2.0
 ├── pyproject.toml
 ├── .pre-commit-config.yaml
-├── .github/workflows/ci.yml # checks on every push; integration on PRs to main
+├── .github/workflows/ci.yml # 3-OS checks on PRs and main; integration on non-draft PRs and main; ci-ok gate
 ├── src/gradle_healer/
 │   ├── core/
 │   │   ├── schemas.py       # BuildResult, TargetClassContext, CodePatchPlan
@@ -118,7 +118,7 @@ flowchart TD
 
    Never bypass hooks with `--no-verify`. Approved so far:
    - `# type: ignore[misc]` in `tests/core/test_schemas.py` (runtime check that a frozen model rejects assignment);
-   - `# noqa: ASYNC110` and bounded polling in `poll_until`, `tests/tools/sandbox.py` (nothing signals when init reaps an orphan).
+   - `monkeypatch.setattr(loop, "subprocess_exec", ...)` in `test_cancellation_during_startup_still_kills_tree`, `tests/tools/test_gradle_runner.py` (delays `subprocess_exec` after the child spawns to deterministically land a cancellation in the startup window without sleep-based synchronization).
 
 ## Commands
 
@@ -148,8 +148,8 @@ uv run pre-commit run --all-files
   - `gradlew` vs `gradlew.bat`.
   - Windows paths in `log_parser` (drive letters, backslashes, `file:///C:/`).
   - Portable tests (no `sh` / `pgrep`).
-  - CI matrix: ubuntu / macos / windows.
-  - CI triggers: `push` only on `main` plus `pull_request` (drafts included); skip docs-only changes (`**.md`, `LICENSE`).
+  - CI matrix: ubuntu / macos / windows, gated by `ci-ok`.
+  - CI triggers: `push` on `main` plus `pull_request` (unit checks on all PRs; integration on non-draft PRs and `main`).
   - Windows log fixtures.
 - [ ] **Sprint 2: LangGraph Core.**
   - `AgentState`.
