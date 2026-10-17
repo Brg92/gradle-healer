@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -55,8 +56,9 @@ async def test_check_build_rejects_an_invalid_package_before_running(tmp_path: P
 async def test_check_build_without_gradlew_is_infrastructure(tmp_path: Path) -> None:
     result = await check_build(tmp_path, ":core:test", target_package=_PACKAGE, timeout_seconds=5)
 
+    expected_wrapper = "gradlew.bat" if sys.platform == "win32" else "gradlew"
     assert result.failure_kind is FailureKind.INFRASTRUCTURE
-    assert result.summary == "gradlew not found in project directory"
+    assert result.summary == f"{expected_wrapper} not found in project directory"
 
 
 # --- Integration: real Gradle on the sandbox scenarios ---

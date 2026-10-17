@@ -1,11 +1,11 @@
 # GradleHealer
 
 [![CI](https://github.com/Brg92/gradle-healer/actions/workflows/ci.yml/badge.svg)](https://github.com/Brg92/gradle-healer/actions/workflows/ci.yml)
-[![Platform: Linux](https://img.shields.io/badge/platform-Linux-blue)](#supported-platforms)
+[![Platform: Linux | macOS | Windows](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-blue)](#supported-platforms)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-An autonomous agent that writes unit tests for legacy Kotlin/Android code and
-repairs them until the real Gradle build passes.
+An autonomous agent being built to write unit tests for legacy Kotlin/Android
+code and repair them until the real Gradle build passes.
 
 ## Table of contents
 
@@ -37,8 +37,9 @@ written before tests were a habit, without trusting a model's claim that the
 tests "should pass".
 
 **Core principle: generation is probabilistic, verification is deterministic.**
-Every model output is a hypothesis until `./gradlew` exits with code 0. The
-agent never guesses the outcome of a build; it runs it.
+Every model output is a hypothesis until the Gradle wrapper (`gradlew` on Linux
+and macOS, `gradlew.bat` on Windows) exits with code 0. The agent never guesses
+the outcome of a build; it runs it.
 
 ## Project status
 
@@ -48,8 +49,8 @@ sprint, and each completed sprint is tagged as a release.
 | Sprint | Scope | Status |
 |---|---|---|
 | 1 | CLI tooling and schemas: Gradle runner, log parser, data contracts | Done (v0.1.0) |
-| 1.5 | Cross-platform: macOS and Windows | Next |
-| 2 | LangGraph core: analyzer, planner, coder and verifier nodes | Planned |
+| 1.5 | Cross-platform: macOS and Windows | Done (v0.2.0) |
+| 2 | LangGraph core: analyzer, planner, coder and verifier nodes | Next |
 | 3 | Reflection and self-healing: reflector, retry routing, git rollback | Planned |
 | 4 | Evals, tracing (Langfuse) and packaging (CLI) | Planned |
 
@@ -71,15 +72,16 @@ self-healing loop) and a command-line interface.
 | Platform | Status |
 |---|---|
 | Linux | Supported, tested in CI |
-| macOS | Not verified yet (Sprint 1.5) |
-| Windows | Not supported yet (Sprint 1.5); WSL2 works as Linux |
+| macOS | Supported, tested in CI |
+| Windows | Supported, tested in CI |
 
 ## Requirements
 
 - Python 3.12 or later.
 - [uv](https://docs.astral.sh/uv/).
 - The JDK that the target project's Gradle build needs. GradleHealer only
-  launches the project's own `gradlew`; the bundled sandbox project uses JDK 17.
+  launches the project's own Gradle wrapper (`gradlew` on Linux and macOS,
+  `gradlew.bat` on Windows); the bundled sandbox project uses JDK 17.
 
 ## Installation
 
@@ -131,7 +133,7 @@ bundled sandbox with the `compile_error` scenario applied (see
 [`evals/fixtures/scenarios`](evals/fixtures/scenarios/README.md)):
 
 ```bash
-uv run python check.py /path/to/sandbox-copy
+uv run python check.py path/to/sandbox-copy
 ```
 
 ```text
@@ -163,7 +165,8 @@ selects which stack trace frames are kept.
   both exit with code 1, so use this field rather than `exit_code`.
 - `errors` holds a few `CompilationError` or `FailedTestError` entries, told
   apart by `kind`; when there are any, exactly one has `is_primary` set and is
-  the one to fix first. Locations are relative to the project root.
+  the one to fix first. Locations are relative to the project root and use
+  forward slashes (`/`) on every platform.
 - `failed_task` is the Gradle task that failed, e.g. `:core:compileTestKotlin`.
 - `summary` is a one-line description, set for `timeout` and `infrastructure`
   and when a failure has no individual errors to report.
@@ -200,9 +203,11 @@ fallback.
 
 The Verifier is the part that exists today, in two steps:
 
-1. `run_gradle` runs `gradlew <task> --console=plain --no-daemon` and returns a
-   `RunOutcome`: exit code, timeout flag, duration, and stdout/stderr with ANSI
-   codes and progress bars stripped.
+1. `run_gradle` runs `gradlew <task> --console=plain --no-daemon` (`gradlew.bat`
+   on Windows) inside an isolated process tree (a POSIX process group on Linux
+   and macOS, or a Job Object on Windows), kills the whole tree on timeout or
+   cancellation, and returns a `RunOutcome`: exit code, timeout flag, duration,
+   and stdout/stderr with ANSI codes and progress bars stripped.
 2. `parse_build` turns the `RunOutcome` into a `BuildResult`: it classifies the
    failure, extracts Kotlin compiler errors (`e: file:///…:line:col`) and failed
    tests (first exception, expected/actual values), and keeps only the stack
@@ -210,8 +215,9 @@ The Verifier is the part that exists today, in two steps:
 
 ## Known limitations and troubleshooting
 
-- **Linux only.** macOS and Windows support is planned for Sprint 1.5; on
-  Windows, use WSL2.
+- **Windows has no graceful stop.** On timeout or cancellation the whole process
+  tree is terminated immediately through the Job Object. Linux and macOS send
+  `SIGTERM`, wait a grace period, then `SIGKILL` the process group.
 - **Test details come from the console.** Failed tests are read from Gradle's
   console output, which includes messages and stack traces only when the
   project sets `testLogging { exceptionFormat = FULL }`. Projects that don't,
@@ -223,11 +229,12 @@ The Verifier is the part that exists today, in two steps:
   individual errors.
 - **The first run is slow.** Each call starts Gradle without a daemon, and a
   cold build also downloads Gradle and the dependencies: allow several minutes
-  and set `timeout_seconds` accordingly (the sandbox's cold build takes about
-  three minutes).
-- **`infrastructure` with "gradlew not found in project directory"**: pass
-  the Gradle root directory, the one that contains `gradlew`, not a module
-  directory.
+  and set `timeout_seconds` accordingly (in CI, the sandbox's cold build takes
+  about two minutes on Linux and macOS, and about four minutes on Windows).
+- **`infrastructure` with `"gradlew not found in project directory"` (Linux and
+  macOS) or `"gradlew.bat not found in project directory"` (Windows)**: pass the
+  Gradle root directory, the one that contains `gradlew` (`gradlew.bat` on
+  Windows), not a module directory.
 
 ## Contributing
 

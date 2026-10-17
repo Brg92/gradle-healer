@@ -1,0 +1,10 @@
+# Default to LF line endings across all platforms so that source files and
+# recorded test fixtures stay byte-for-byte identical on checkout.
+* text=auto eol=lf
+
+# Windows batch scripts require CRLF line endings for cmd.exe.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary archives.
+*.jar binary

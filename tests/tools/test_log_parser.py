@@ -16,6 +16,13 @@ from gradle_healer.tools.log_parser import MAX_ERRORS, parse_build
 
 _LOG_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "logs"
 _PROJECT_ROOT = "<PROJECT_ROOT>"
+_WINDOWS_PROJECT_ROOT = r"C:\PROJECT_ROOT"
+_OS_PROJECT_ROOTS: dict[str, str] = {
+    "linux": _PROJECT_ROOT,
+    "macos": _PROJECT_ROOT,
+    "windows": _WINDOWS_PROJECT_ROOT,
+}
+_FIXTURE_OSES: tuple[str, ...] = ("linux", "macos", "windows")
 _PACKAGE = "com.example.sandbox"
 _SANDBOX_DIR = "core/src/test/kotlin/com/example/sandbox"
 _BROKEN_TEST = f"{_SANDBOX_DIR}/BrokenTest.kt"
@@ -42,11 +49,12 @@ def _outcome(
     )
 
 
-def _recorded(scenario: str, exit_code: int) -> RunOutcome:
+def _recorded(scenario: str, exit_code: int, *, os_name: str = "linux") -> RunOutcome:
+    os_dir = _LOG_FIXTURES / os_name
     return _outcome(
         exit_code=exit_code,
-        stdout=(_LOG_FIXTURES / f"{scenario}.stdout.txt").read_text(),
-        stderr=(_LOG_FIXTURES / f"{scenario}.stderr.txt").read_text(),
+        stdout=(os_dir / f"{scenario}.stdout.txt").read_text(encoding="utf-8"),
+        stderr=(os_dir / f"{scenario}.stderr.txt").read_text(encoding="utf-8"),
     )
 
 
@@ -54,12 +62,13 @@ def _parse(
     outcome: RunOutcome,
     *,
     task: str = ":core:test",
+    project_root: str = _PROJECT_ROOT,
     source_index: Mapping[str, str] | None = None,
 ) -> BuildResult:
     result = parse_build(
         outcome,
         task=task,
-        project_root=_PROJECT_ROOT,
+        project_root=project_root,
         target_package=_PACKAGE,
         source_index=source_index,
     )
@@ -78,11 +87,12 @@ def _test_block(exception_line: str, *frames: str) -> str:
 
 
 # --- Recorded fixtures ---
-def test_baseline_is_a_success() -> None:
-    outcome = _recorded("baseline", exit_code=0)
+@pytest.mark.parametrize("os_name", _FIXTURE_OSES)
+def test_baseline_is_a_success(os_name: str) -> None:
+    outcome = _recorded("baseline", exit_code=0, os_name=os_name)
     assert "Sharing is only supported" in outcome.stderr
 
-    result = _parse(outcome)
+    result = _parse(outcome, project_root=_OS_PROJECT_ROOTS[os_name])
 
     assert result.success
     assert result.failure_kind is None
@@ -91,8 +101,12 @@ def test_baseline_is_a_success() -> None:
     assert result.summary is None
 
 
-def test_compile_error_extracts_relative_compiler_errors() -> None:
-    result = _parse(_recorded("compile_error", exit_code=1))
+@pytest.mark.parametrize("os_name", _FIXTURE_OSES)
+def test_compile_error_extracts_relative_compiler_errors(os_name: str) -> None:
+    result = _parse(
+        _recorded("compile_error", exit_code=1, os_name=os_name),
+        project_root=_OS_PROJECT_ROOTS[os_name],
+    )
 
     assert result.failure_kind is FailureKind.COMPILE_ERROR
     assert result.failed_task == ":core:compileTestKotlin"
@@ -129,29 +143,68 @@ def _expected_assertion_failure(location: SourceLocation | None) -> FailedTestEr
     )
 
 
-def test_assertion_failure_without_index_has_no_location() -> None:
-    result = _parse(_recorded("assertion_failure", exit_code=1))
+@pytest.mark.parametrize("os_name", _FIXTURE_OSES)
+def test_assertion_failure_without_index_has_no_location(os_name: str) -> None:
+    result = _parse(
+        _recorded("assertion_failure", exit_code=1, os_name=os_name),
+        project_root=_OS_PROJECT_ROOTS[os_name],
+    )
 
     assert result.failure_kind is FailureKind.TEST_FAILURE
     assert result.failed_task == ":core:test"
     assert result.errors == [_expected_assertion_failure(location=None)]
 
 
-def test_assertion_failure_location_is_resolved_with_the_index() -> None:
+@pytest.mark.parametrize("os_name", _FIXTURE_OSES)
+def test_assertion_failure_location_is_resolved_with_the_index(os_name: str) -> None:
     index = {"GetUserUseCaseFailingTest.kt": _FAILING_TEST, "User.kt": "core/src/main/User.kt"}
 
-    result = _parse(_recorded("assertion_failure", exit_code=1), source_index=index)
+    result = _parse(
+        _recorded("assertion_failure", exit_code=1, os_name=os_name),
+        project_root=_OS_PROJECT_ROOTS[os_name],
+        source_index=index,
+    )
 
     assert result.errors == [
         _expected_assertion_failure(location=SourceLocation(file=_FAILING_TEST, line=20))
     ]
 
 
-def test_assertion_failure_location_needs_the_file_in_the_index() -> None:
-    result = _parse(_recorded("assertion_failure", exit_code=1), source_index={"Other.kt": "x"})
+@pytest.mark.parametrize("os_name", _FIXTURE_OSES)
+def test_assertion_failure_location_needs_the_file_in_the_index(os_name: str) -> None:
+    result = _parse(
+        _recorded("assertion_failure", exit_code=1, os_name=os_name),
+        project_root=_OS_PROJECT_ROOTS[os_name],
+        source_index={"Other.kt": "x"},
+    )
 
     assert isinstance(error := result.errors[0], FailedTestError)
     assert error.location is None
+
+
+@pytest.mark.parametrize(
+    ("scenario", "exit_code"),
+    [
+        ("baseline", 0),
+        ("compile_error", 1),
+        ("assertion_failure", 1),
+    ],
+)
+def test_recorded_scenarios_produce_identical_build_results_across_oses(
+    scenario: str, exit_code: int
+) -> None:
+    index = {"GetUserUseCaseFailingTest.kt": _FAILING_TEST, "User.kt": "core/src/main/User.kt"}
+    by_os = {
+        os_name: _parse(
+            _recorded(scenario, exit_code=exit_code, os_name=os_name),
+            project_root=_OS_PROJECT_ROOTS[os_name],
+            source_index=index,
+        ).model_copy(update={"stdout": "", "stderr": ""})
+        for os_name in _FIXTURE_OSES
+    }
+
+    assert by_os["macos"] == by_os["linux"]
+    assert by_os["windows"] == by_os["linux"]
 
 
 # --- Launch error and timeout ---
@@ -209,6 +262,28 @@ def test_summary_strips_the_project_root() -> None:
     result = _parse(_outcome(stderr=stderr))
 
     assert result.summary == "Broken file core/build.gradle.kts"
+
+
+@pytest.mark.parametrize(
+    ("project_root", "in_log"),
+    [
+        (r"C:\Users\dev\repo", r"C:\Users\dev\repo\core\build.gradle.kts"),
+        (r"C:\Users\dev\repo", "file:///C:/Users/dev/repo/core/build/reports/index.html"),
+        ("C:/Users/dev/repo", r"C:\Users\dev\repo\core\build.gradle.kts"),
+    ],
+)
+def test_summary_strips_windows_project_root(project_root: str, in_log: str) -> None:
+    stderr = f"* What went wrong:\nBroken file {in_log}\n"
+
+    result = parse_build(
+        _outcome(stderr=stderr),
+        task=":core:test",
+        project_root=project_root,
+        target_package=_PACKAGE,
+    )
+
+    assert project_root not in (result.summary or "")
+    assert "Users" not in (result.summary or "")
 
 
 def test_unknown_failure_without_details_reports_the_exit_code() -> None:
@@ -312,6 +387,66 @@ def test_long_compiler_message_is_truncated() -> None:
     assert isinstance(error := result.errors[0], CompilationError)
     assert len(error.message) == 500
     assert error.message.endswith("…")
+
+
+@pytest.mark.parametrize(
+    ("project_root", "error_prefix"),
+    [
+        (r"C:\Users\runner\work\repo", "e: file:///C:/Users/runner/work/repo/"),
+        (r"C:\Users\runner\work\repo", "e: file:/C:/Users/runner/work/repo/"),
+        (r"C:\Users\runner\work\repo", "e: file://C:/Users/runner/work/repo/"),
+        (r"C:\Users\runner\work\repo", "e: file:C:/Users/runner/work/repo/"),
+        (r"C:\Users\runner\work\repo", r"e: C:\Users\runner\work\repo\\".rstrip("\\") + "\\"),
+        (r"C:\Users\runner\work\repo", "e: C:/Users/runner/work/repo/"),
+        (r"c:\users\runner\work\repo", "e: file:///C:/Users/runner/work/repo/"),
+        (r"C:\Users\Runner\Work\Repo", "e: file:///c:/users/runner/work/repo/"),
+        ("/Users/runner/work/repo", "e: file:///Users/runner/work/repo/"),
+        (
+            "/private/var/folders/xx/T/pytest-0/sandbox",
+            "e: /private/var/folders/xx/T/pytest-0/sandbox/",
+        ),
+    ],
+)
+def test_compiler_error_paths_across_platforms_normalize_to_posix_relative(
+    project_root: str, error_prefix: str
+) -> None:
+    rel_file = _BROKEN_TEST.replace("/", "\\") if "\\" in error_prefix else _BROKEN_TEST
+    stderr = f"{error_prefix}{rel_file}:11:26 Unresolved reference 'UserService'.\n"
+
+    result = parse_build(
+        _outcome(stderr=stderr),
+        task=":core:test",
+        project_root=project_root,
+        target_package=_PACKAGE,
+    )
+
+    assert result.failure_kind is FailureKind.COMPILE_ERROR
+    assert result.summary is None
+    assert result.errors == [
+        CompilationError(
+            location=SourceLocation(file=_BROKEN_TEST, line=11, column=26),
+            message="Unresolved reference 'UserService'.",
+            is_primary=True,
+        )
+    ]
+
+
+def test_windows_compiler_error_outside_root_is_counted() -> None:
+    stderr = (
+        "e: file:///D:/other/Generated.kt:1:1 Outside on D drive.\n"
+        r"e: C:\Users\runner\other\Other.kt:2:2 Outside on C drive." + "\n"
+    )
+
+    result = parse_build(
+        _outcome(stderr=stderr),
+        task=":core:test",
+        project_root=r"C:\Users\runner\work\repo",
+        target_package=_PACKAGE,
+    )
+
+    assert result.failure_kind is FailureKind.COMPILE_ERROR
+    assert result.errors == []
+    assert result.summary == "2 compiler errors outside the project root"
 
 
 # --- Test failures ---

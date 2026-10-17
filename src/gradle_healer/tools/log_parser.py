@@ -39,9 +39,11 @@ _PACKAGE_NAME = re.compile(JVM_PACKAGE_PATTERN)
 
 # e: file://<PROJECT_ROOT>/core/src/test/kotlin/com/example/sandbox/BrokenTest.kt:11:26 \
 #   Unresolved reference 'UserService'.
+# Also matches Windows paths (file:///C:/..., file:/C:/..., C:\..., C:/...).
 # Warnings start with "w: " and are ignored.
 _COMPILER_ERROR = re.compile(
-    r"^e: (?:file://)?(?P<path>[^:]+):(?P<line>\d+):(?P<column>\d+) (?P<message>.+)$",
+    r"^e: (?:file:/{0,3}(?=[A-Za-z]:)|file://)?(?P<path>(?:[A-Za-z]:)?[^:]+)"
+    r":(?P<line>\d+):(?P<column>\d+) (?P<message>.+)$",
     re.MULTILINE,
 )
 
@@ -121,22 +123,49 @@ def _task_name(task: str | None) -> str:
     return task.rsplit(":", 1)[-1] if task else ""
 
 
+_WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:/")
+
+
+def _normalize_fs_path(path: str) -> str:
+    normalized = path.replace("\\", "/")
+    if len(normalized) >= 3 and normalized[0] == "/" and normalized[2] == ":":
+        normalized = normalized[1:]
+    return normalized
+
+
 def _what_went_wrong(outcome: RunOutcome, project_root: str) -> str | None:
     for text in (outcome.stderr, outcome.stdout):
         if match := _WHAT_WENT_WRONG.search(text):
             parts = [match["what"].strip()]
             if match["cause"]:
                 parts.append(match["cause"].strip())
-            # Keeps the user's absolute paths out of the summary.
-            return " ".join(parts).replace(project_root + "/", "")
+            # Keeps the user's absolute paths out of the summary (both POSIX and Windows forms).
+            joined = " ".join(parts)
+            root_posix = _normalize_fs_path(project_root).rstrip("/")
+            root_win = root_posix.replace("/", "\\")
+            for variant in dict.fromkeys(
+                (
+                    project_root.rstrip("/\\") + "/",
+                    project_root.rstrip("/\\") + "\\",
+                    root_posix + "/",
+                    root_win + "\\",
+                )
+            ):
+                joined = joined.replace(variant, "")
+            return joined
     return None
 
 
 def _relative_path(path: str, project_root: str) -> str | None:
-    prefix = project_root.rstrip("/") + "/"
-    if not path.startswith(prefix):
+    norm_path = _normalize_fs_path(path)
+    prefix = _normalize_fs_path(project_root).rstrip("/") + "/"
+    if _WINDOWS_DRIVE_PREFIX.match(prefix):
+        matches = norm_path[: len(prefix)].lower() == prefix.lower()
+    else:
+        matches = norm_path.startswith(prefix)
+    if not matches:
         return None
-    relative = path[len(prefix) :]
+    relative = norm_path[len(prefix) :]
     if not relative or len(relative) > _NAME_MAX_CHARS or relative.startswith(("/", "file:")):
         return None
     return relative
@@ -156,7 +185,7 @@ def _extract_compiler_errors(outcome: RunOutcome, project_root: str) -> _Compile
     for text in (outcome.stderr, outcome.stdout):
         for match in _COMPILER_ERROR.finditer(text):
             key = (
-                match["path"],
+                _normalize_fs_path(match["path"]),
                 int(match["line"]),
                 int(match["column"]),
                 match["message"].strip(),

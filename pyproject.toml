@@ -1,6 +1,6 @@
 [project]
 name = "gradle-healer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Autonomous LangGraph agent that generates and self-heals Kotlin/Android unit tests verified via Gradle"
 readme = "README.md"
 license = "Apache-2.0"
@@ -21,9 +21,11 @@ build-backend = "uv_build"
 dev = [
     "mypy>=2.4.0",
     "pre-commit>=4.7.0",
+    "psutil>=7.2.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.10",
+    "types-psutil>=7.2.2.20260906",
 ]
 
 [tool.ruff]
