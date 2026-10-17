@@ -22,11 +22,7 @@ _OS_PROJECT_ROOTS: dict[str, str] = {
     "macos": _PROJECT_ROOT,
     "windows": _WINDOWS_PROJECT_ROOT,
 }
-_AVAILABLE_FIXTURE_OSES: tuple[str, ...] = tuple(
-    os_name
-    for os_name in ("linux", "macos", "windows")
-    if (_LOG_FIXTURES / os_name / "baseline.stdout.txt").is_file()
-)
+_FIXTURE_OSES: tuple[str, ...] = ("linux", "macos", "windows")
 _PACKAGE = "com.example.sandbox"
 _SANDBOX_DIR = "core/src/test/kotlin/com/example/sandbox"
 _BROKEN_TEST = f"{_SANDBOX_DIR}/BrokenTest.kt"
@@ -91,9 +87,10 @@ def _test_block(exception_line: str, *frames: str) -> str:
 
 
 # --- Recorded fixtures ---
-@pytest.mark.parametrize("os_name", _AVAILABLE_FIXTURE_OSES)
+@pytest.mark.parametrize("os_name", _FIXTURE_OSES)
 def test_baseline_is_a_success(os_name: str) -> None:
     outcome = _recorded("baseline", exit_code=0, os_name=os_name)
+    assert "Sharing is only supported" in outcome.stderr
 
     result = _parse(outcome, project_root=_OS_PROJECT_ROOTS[os_name])
 
@@ -104,7 +101,7 @@ def test_baseline_is_a_success(os_name: str) -> None:
     assert result.summary is None
 
 
-@pytest.mark.parametrize("os_name", _AVAILABLE_FIXTURE_OSES)
+@pytest.mark.parametrize("os_name", _FIXTURE_OSES)
 def test_compile_error_extracts_relative_compiler_errors(os_name: str) -> None:
     result = _parse(
         _recorded("compile_error", exit_code=1, os_name=os_name),
@@ -146,7 +143,7 @@ def _expected_assertion_failure(location: SourceLocation | None) -> FailedTestEr
     )
 
 
-@pytest.mark.parametrize("os_name", _AVAILABLE_FIXTURE_OSES)
+@pytest.mark.parametrize("os_name", _FIXTURE_OSES)
 def test_assertion_failure_without_index_has_no_location(os_name: str) -> None:
     result = _parse(
         _recorded("assertion_failure", exit_code=1, os_name=os_name),
@@ -158,7 +155,7 @@ def test_assertion_failure_without_index_has_no_location(os_name: str) -> None:
     assert result.errors == [_expected_assertion_failure(location=None)]
 
 
-@pytest.mark.parametrize("os_name", _AVAILABLE_FIXTURE_OSES)
+@pytest.mark.parametrize("os_name", _FIXTURE_OSES)
 def test_assertion_failure_location_is_resolved_with_the_index(os_name: str) -> None:
     index = {"GetUserUseCaseFailingTest.kt": _FAILING_TEST, "User.kt": "core/src/main/User.kt"}
 
@@ -173,7 +170,7 @@ def test_assertion_failure_location_is_resolved_with_the_index(os_name: str) -> 
     ]
 
 
-@pytest.mark.parametrize("os_name", _AVAILABLE_FIXTURE_OSES)
+@pytest.mark.parametrize("os_name", _FIXTURE_OSES)
 def test_assertion_failure_location_needs_the_file_in_the_index(os_name: str) -> None:
     result = _parse(
         _recorded("assertion_failure", exit_code=1, os_name=os_name),
@@ -183,6 +180,31 @@ def test_assertion_failure_location_needs_the_file_in_the_index(os_name: str) ->
 
     assert isinstance(error := result.errors[0], FailedTestError)
     assert error.location is None
+
+
+@pytest.mark.parametrize(
+    ("scenario", "exit_code"),
+    [
+        ("baseline", 0),
+        ("compile_error", 1),
+        ("assertion_failure", 1),
+    ],
+)
+def test_recorded_scenarios_produce_identical_build_results_across_oses(
+    scenario: str, exit_code: int
+) -> None:
+    index = {"GetUserUseCaseFailingTest.kt": _FAILING_TEST, "User.kt": "core/src/main/User.kt"}
+    by_os = {
+        os_name: _parse(
+            _recorded(scenario, exit_code=exit_code, os_name=os_name),
+            project_root=_OS_PROJECT_ROOTS[os_name],
+            source_index=index,
+        ).model_copy(update={"stdout": "", "stderr": ""})
+        for os_name in _FIXTURE_OSES
+    }
+
+    assert by_os["macos"] == by_os["linux"]
+    assert by_os["windows"] == by_os["linux"]
 
 
 # --- Launch error and timeout ---
