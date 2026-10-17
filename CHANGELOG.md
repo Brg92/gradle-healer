@@ -28,7 +28,10 @@ Cross-platform support for macOS and Windows alongside Linux (Sprint 1.5).
 ### Changed
 
 - `run_gradle` resolves `gradlew.bat` on Windows (`gradlew` on Linux and macOS)
-  and validates `extra_args` against blank or newline-containing entries.
+  and validates each `extra_args` entry against a whitelist of safe characters
+  (letters, digits and `_ . / : = + * $ , @ -`). Spaces and shell/batch
+  metacharacters (`& | < > ^ % ! " ( )`) are rejected, so an argument
+  containing a space is now refused; pass separate arguments instead.
 - The missing-wrapper infrastructure error names the platform wrapper (`gradlew`
   on Linux and macOS, `gradlew.bat` on Windows).
 - CI runs on Linux, macOS and Windows (`ubuntu-latest`, `macos-latest`,
